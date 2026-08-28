@@ -65,11 +65,11 @@ separation, and mobility controls. Area protection from 0.00 to 1.00 controls
 how strongly it tries to preserve its programmed area. Effective area is shown
 when an area cannot recover all of its programmed area.
 
-The Selected area's links list in the right sidebar shows every relationship and
-gives each one independent pull, line style, line width, color, and unlink
-controls. Set pull to 0% for no attraction without deleting the visible line.
-The controls above that list apply only as defaults when a new relationship is
-created.
+The Relationships section is part of Selected area properties. It shows every
+link for that area and gives each one independent pull, line style, line width,
+color, and unlink controls. Set pull to 0% for no attraction without deleting
+the visible line. The controls above that list apply only as defaults when a
+new relationship is created.
 
 Only spaces connected by an explicit relationship line attract one another.
 Unconnected spaces have no shared-center gravity and remain where placed unless
@@ -86,6 +86,13 @@ similar to a map control. Use its slider, plus/minus buttons, 100% reset, or the
 mouse wheel without leaving the drawing area. The drawing fits the visible window
 so the overlay does not require scrolling. Drag any empty part of the canvas to
 pan around the diagram.
+
+MOBILE
+On a phone, the canvas appears first and remains fully touch-enabled. The page
+then stacks the shortened area list, selected-area properties, boundaries, and
+annotations into single-column sections. A fixed bottom navigation jumps among
+Canvas, Areas, Properties, and Tools. Buttons, inputs, and sliders use larger
+touch targets, while the project actions can be scrolled horizontally.
 
 This is an early test-fit concept tool. It does not verify code, circulation,
 accessibility, structure, exact dimensions, or construction feasibility.

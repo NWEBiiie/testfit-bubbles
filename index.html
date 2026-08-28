@@ -23,7 +23,7 @@
 
   <main>
     <aside class="left-sidebar">
-      <section class="create-panel">
+      <section id="createPanel" class="create-panel">
         <h2>Create area</h2>
         <form id="addForm">
           <label>Space name<input id="name" maxlength="28" placeholder="Conference" required></label>
@@ -32,7 +32,7 @@
         </form>
       </section>
 
-      <section class="areas-panel">
+      <section id="areasPanel" class="areas-panel">
         <div class="section-title"><h2>All areas</h2><output id="total"></output></div>
         <div id="list"></div>
       </section>
@@ -80,11 +80,26 @@
         <label class="check"><input id="sketchEffect" type="checkbox" checked> Hand-drawn line</label>
         <label class="check"><input id="misregisterEffect" type="checkbox"> Misregistered color outlines</label>
         <button id="randomizeSketch" class="wide-button">Randomize this outline</button>
+
+        <div class="property-subpanel relationship-panel">
+          <div class="subsection-heading">Relationships</div>
+          <button id="connectSpaces" class="wide-button">Link / unlink two areas</button>
+          <div id="linkSelectionState" class="link-state" aria-live="polite"><span>1. Choose first area</span><b>→</b><span>2. Choose second area</span></div>
+          <label class="check"><input id="links" type="checkbox" checked> Show relationships</label>
+          <div class="subsection-heading">New link defaults</div>
+          <label class="select-label" for="connectionStyle">Line style</label>
+          <select id="connectionStyle"><option value="sketch">Sketch dashed</option><option value="solid">Solid</option><option value="dotted">Dotted</option><option value="arrow">Directional arrow</option></select>
+          <label class="range">Line weight <output id="lineWeightValue">2 px</output></label>
+          <input id="lineWeight" type="range" min="1" max="6" value="2">
+          <label class="color-row">Line color <input id="connectionColor" type="color" value="#276749"></label>
+          <div class="subsection-heading connection-section-title"><span>This area's links</span><output id="connectionsOwner"></output></div>
+          <div id="selectedConnections" class="selected-connections"></div>
+        </div>
       </section>
 
     </aside>
 
-    <article>
+    <article id="diagramPanel">
       <div class="bar"><span id="status" aria-live="polite">Ready.</span><button id="reflow">Reflow movable spaces</button></div>
       <div class="canvas-shell">
         <canvas id="diagram" aria-label="Interactive architectural bubble diagram"></canvas>
@@ -97,7 +112,7 @@
       </div>
     </article>
 
-    <aside class="right-sidebar">
+    <aside id="toolsPanel" class="right-sidebar">
       <section>
         <div class="section-title"><h2>Boundaries</h2><output id="boundaryCount">0</output></div>
         <label class="select-label" for="boundaryKind">New boundary type</label>
@@ -115,21 +130,6 @@
         <label class="range">Inside margin <output id="marginValue">8 px</output></label>
         <input id="margin" type="range" min="0" max="40" value="8">
         <p class="hint">Add as many outer boundaries and voids as needed. Freehand shapes close automatically.</p>
-      </section>
-
-      <section>
-        <h2>Link / unlink</h2>
-        <button id="connectSpaces" class="wide-button">Link / unlink two areas</button>
-        <div id="linkSelectionState" class="link-state" aria-live="polite"><span>1. Choose first area</span><b>→</b><span>2. Choose second area</span></div>
-        <label class="check"><input id="links" type="checkbox" checked> Show relationships</label>
-        <div class="subsection-heading">New link defaults</div>
-        <label class="select-label" for="connectionStyle">Line style</label>
-        <select id="connectionStyle"><option value="sketch">Sketch dashed</option><option value="solid">Solid</option><option value="dotted">Dotted</option><option value="arrow">Directional arrow</option></select>
-        <label class="range">Line weight <output id="lineWeightValue">2 px</output></label>
-        <input id="lineWeight" type="range" min="1" max="6" value="2">
-        <label class="color-row">Line color <input id="connectionColor" type="color" value="#276749"></label>
-        <div class="subsection-heading connection-section-title"><span>Selected area's links</span><output id="connectionsOwner"></output></div>
-        <div id="selectedConnections" class="selected-connections"></div>
       </section>
 
       <section>
@@ -152,6 +152,12 @@
 
     </aside>
   </main>
+  <nav class="mobile-dock" aria-label="Mobile workspace navigation">
+    <a href="#diagramPanel">Canvas</a>
+    <a href="#areasPanel">Areas</a>
+    <a href="#spaceInspector">Properties</a>
+    <a href="#toolsPanel">Tools</a>
+  </nav>
   <script src="script.js"></script>
 </body>
 </html>
