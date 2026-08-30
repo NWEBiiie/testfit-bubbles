@@ -6,10 +6,20 @@ const boundaryList = $("#boundaryList");
 const status = $("#status");
 
 const COLORS = ["#24a5df", "#ea198c", "#ffe72d", "#201d1a", "#35b56a", "#f06036", "#7669b0"];
-const AREA_SCALE = 2.2;
+const HISTORICAL_VARIANT = Number.isFinite(Number(window.TESTFIT_FEATURE_STAGE));
+const AREA_SCALE = HISTORICAL_VARIANT ? 2.75 : 2.2;
 const PROFILE_SAMPLES = 96;
-const DEFAULT_STYLE = { fill: "solid", outline: "open", pattern: "none", sketch: true, misregister: false };
-const DEFAULT_PHYSICS = { foam: true, squeeze: .75, separation: .7, mobility: 1, weight: .5 };
+const FEATURE_STAGE = Math.max(1, Math.min(5, Number(window.TESTFIT_FEATURE_STAGE) || 5));
+const DEFAULT_STYLE = FEATURE_STAGE >= 3
+  ? { fill: "solid", outline: "open", pattern: "none", sketch: true, misregister: false }
+  : { fill: "solid", outline: "solid", pattern: "none", sketch: false, misregister: false };
+const DEFAULT_PHYSICS = {
+  foam: FEATURE_STAGE >= 2,
+  squeeze: FEATURE_STAGE >= 2 ? .75 : 0,
+  separation: .7,
+  mobility: 1,
+  weight: FEATURE_STAGE >= 2 ? .5 : 0
+};
 
 let nodes = [];
 let edges = [];
@@ -92,6 +102,23 @@ function reset() {
     { a: nodes[1].id, b: nodes[2].id, pull: .6, style: "sketch", width: 2, color: "#276749" },
     { a: nodes[2].id, b: nodes[0].id, pull: .6, style: "sketch", width: 2, color: "#276749" }
   ];
+
+  if (HISTORICAL_VARIANT && FEATURE_STAGE >= 2) {
+    const boundaryWidth = Math.max(300, Math.min(w * .64, 460));
+    const boundaryHeight = Math.max(250, Math.min(h * .58, 350));
+    boundaries.push({
+      id: nextBoundaryId++, name: "Boundary 1", kind: "outer", color: "#1b2721", visible: true,
+      type: "rect", x: cx - boundaryWidth / 2, y: cy - boundaryHeight / 2,
+      width: boundaryWidth, height: boundaryHeight
+    });
+  }
+
+  if (HISTORICAL_VARIANT && FEATURE_STAGE >= 3) {
+    nodes[0].style = { fill: "solid", outline: "open", pattern: "none", sketch: true, misregister: false };
+    nodes[1].style = { fill: "solid", outline: "dashed", pattern: "none", sketch: false, misregister: true };
+    nodes[2].style = { fill: "tint", outline: "solid", pattern: "parallel", sketch: true, misregister: false };
+  }
+
   selected = nodes[0].id;
   status.textContent = "Three connected spaces are ready. Select one to edit it.";
   renderAllControls();

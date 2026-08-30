@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TestFit Bubbles</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="controls.css">
+  <link rel="stylesheet" href="variant.css">
+</head>
+<body>
+  <header>
+    <div><small>EARLY SPACE PLANNING</small><h1>TestFit Bubbles</h1></div>
+    <div class="actions" aria-label="Project and export actions">
+      <button id="reset">Reset</button>
+      <button id="exportProject">Save project</button>
+      <button id="importProject">Open project</button>
+      <input id="projectFile" type="file" accept=".json,.testfit.json,application/json" hidden>
+      <button id="exportSvg">Export SVG</button>
+      <button id="exportPng" class="primary">Export PNG</button>
+      <button id="printLayout">Print</button>
+    </div>
+  </header>
+
+  <main>
+    <aside class="left-sidebar">
+      <section id="createPanel" class="create-panel">
+        <h2>Create area</h2>
+        <form id="addForm">
+          <label>Space name<input id="name" maxlength="28" placeholder="Conference" required></label>
+          <label>Area (sf)<input id="area" type="number" min="1" step="1" value="500" required></label>
+          <button class="primary">Add space</button>
+        </form>
+      </section>
+
+      <section id="areasPanel" class="areas-panel">
+        <div class="section-title"><h2>All areas</h2><output id="total"></output></div>
+        <div id="list"></div>
+      </section>
+
+      <section id="spaceInspector" class="properties-panel is-hidden">
+        <div class="section-title sticky-title"><h2>Selected area properties</h2><output id="selectedName"></output></div>
+        <div class="property-grid">
+          <label>Area name<input id="selectedAreaName" maxlength="28"></label>
+          <label>Program area (sf)<input id="selectedAreaSize" type="number" min="1" step="1"></label>
+        </div>
+        <label class="select-label" for="roomShape">Room geometry</label>
+        <select id="roomShape">
+          <option value="circle">Circle</option>
+          <option value="rect">Filleted rectangle</option>
+          <option value="lshape">Filleted L-shape</option>
+          <option value="custom">Custom sketch</option>
+        </select>
+        <button id="sketchRoom" class="wide-button">Sketch custom room shape</button>
+        <label class="select-label spaced" for="spaceBoundary">Assigned boundary</label>
+        <select id="spaceBoundary"><option value="">Automatic</option></select>
+        <div class="coordinate-grid">
+          <label>X coordinate<input id="coordX" type="number" step="1"></label>
+          <label>Y coordinate<input id="coordY" type="number" step="1"></label>
+        </div>
+        <button id="pinSpace" class="wide-button">Fix location</button>
+        <label class="check"><input id="showAnchor" type="checkbox" checked> Reveal fixed anchor and coordinates</label>
+        <div class="subsection-heading">Area physics</div>
+        <label class="check"><input id="spaceFoam" type="checkbox" checked> Participate in foam squeezing</label>
+        <label class="range">Fluidity <output id="spaceSqueezeValue">75%</output></label>
+        <input id="spaceSqueeze" type="range" min="0" max="100" step="1" value="75">
+        <label class="range">Area protection <output id="selectedWeightValue">0.50</output></label>
+        <input id="selectedWeight" type="range" min="0" max="1" step="0.05" value="0.5">
+        <label class="range">Separation <output id="spaceSeparationValue">70%</output></label>
+        <input id="spaceSeparation" type="range" min="0" max="100" step="1" value="70">
+        <label class="range">Mobility <output id="spaceMobilityValue">100%</output></label>
+        <input id="spaceMobility" type="range" min="0" max="100" step="1" value="100">
+        <div class="subsection-heading">Selected appearance</div>
+        <label class="color-row">Space color <input id="selectedColor" type="color" value="#24a5df"></label>
+        <label class="select-label spaced" for="fillStyle">Fill</label>
+        <select id="fillStyle"><option value="solid">Solid</option><option value="tint">Translucent</option><option value="outline">No fill</option><option value="blueprint">Blueprint</option></select>
+        <label class="select-label spaced" for="outlineStyle">Outline</label>
+        <select id="outlineStyle"><option value="open">Open sketch line</option><option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option></select>
+        <label class="select-label spaced" for="patternStyle">Pattern</label>
+        <select id="patternStyle"><option value="none">None</option><option value="parallel">Parallel hatch</option><option value="dots">Dots</option></select>
+        <label class="check"><input id="sketchEffect" type="checkbox" checked> Hand-drawn line</label>
+        <label class="check"><input id="misregisterEffect" type="checkbox"> Misregistered color outlines</label>
+        <button id="randomizeSketch" class="wide-button">Randomize this outline</button>
+
+        <div class="property-subpanel relationship-panel">
+          <div class="subsection-heading">Relationships</div>
+          <button id="connectSpaces" class="wide-button">Link / unlink two areas</button>
+          <div id="linkSelectionState" class="link-state" aria-live="polite"><span>1. Choose first area</span><b>→</b><span>2. Choose second area</span></div>
+          <label class="check"><input id="links" type="checkbox" checked> Show relationships</label>
+          <div class="subsection-heading">New link defaults</div>
+          <label class="select-label" for="connectionStyle">Line style</label>
+          <select id="connectionStyle"><option value="sketch">Sketch dashed</option><option value="solid">Solid</option><option value="dotted">Dotted</option><option value="arrow">Directional arrow</option></select>
+          <label class="range">Line weight <output id="lineWeightValue">2 px</output></label>
+          <input id="lineWeight" type="range" min="1" max="6" value="2">
+          <label class="color-row">Line color <input id="connectionColor" type="color" value="#276749"></label>
+          <div class="subsection-heading connection-section-title"><span>This area's links</span><output id="connectionsOwner"></output></div>
+          <div id="selectedConnections" class="selected-connections"></div>
+        </div>
+      </section>
+    </aside>
+
+    <article id="diagramPanel">
+      <div class="bar"><span id="status" aria-live="polite">Ready.</span><button id="reflow">Reflow movable spaces</button></div>
+      <div class="canvas-shell">
+        <canvas id="diagram" aria-label="Interactive architectural bubble diagram"></canvas>
+        <div class="zoom-overlay" aria-label="Diagram zoom controls">
+          <button id="zoomOut" aria-label="Zoom out">−</button>
+          <input id="zoom" type="range" min="50" max="250" step="10" value="100" aria-label="Zoom level">
+          <button id="zoomIn" aria-label="Zoom in">+</button>
+          <button id="zoomReset" class="zoom-readout" aria-label="Reset zoom"><output id="zoomValue">100%</output></button>
+        </div>
+      </div>
+    </article>
+
+    <aside id="toolsPanel" class="right-sidebar">
+      <section>
+        <div class="section-title"><h2>Boundaries</h2><output id="boundaryCount">0</output></div>
+        <label class="select-label" for="boundaryKind">New boundary type</label>
+        <select id="boundaryKind"><option value="outer">Outer boundary</option><option value="void">Void / exclusion</option></select>
+        <div class="boundary-buttons">
+          <button id="drawBoundary">Rectangle</button>
+          <button id="sketchBoundary">Freehand</button>
+          <button id="polylineBoundary">Polyline</button>
+          <button id="finishPolyline" disabled>Finish / close</button>
+        </div>
+        <button id="importSvgBoundary" class="wide-button">Use SVG file as boundary</button>
+        <input id="svgBoundaryFile" type="file" accept=".svg,image/svg+xml" hidden>
+        <div id="boundaryList" class="boundary-list"></div>
+        <label class="check"><input id="contain" type="checkbox" checked> Keep spaces inside boundaries</label>
+        <label class="range">Inside margin <output id="marginValue">8 px</output></label>
+        <input id="margin" type="range" min="0" max="40" value="8">
+        <p class="hint">Add as many outer boundaries and voids as needed. Freehand shapes close automatically.</p>
+      </section>
+
+      <section>
+        <div class="section-title"><h2>Annotations</h2><output id="annotationCount">0</output></div>
+        <button id="drawArrow" class="wide-button">Draw arrow on top</button>
+        <label class="select-label spaced" for="annotationStyle">Line style</label>
+        <select id="annotationStyle"><option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option></select>
+        <label class="range">Line weight <output id="annotationWeightValue">3 px</output></label>
+        <input id="annotationWeight" type="range" min="1" max="8" value="3">
+        <label class="select-label spaced" for="annotationHeadStyle">Arrow head</label>
+        <select id="annotationHeadStyle"><option value="filled">Filled</option><option value="open">Open V</option><option value="outline">Outlined</option></select>
+        <label class="select-label spaced" for="annotationEnds">Arrow ends</label>
+        <select id="annotationEnds"><option value="single">Single headed</option><option value="double">Double headed</option></select>
+        <label class="color-row">Line color <input id="annotationColor" type="color" value="#171717"></label>
+        <button id="clearAnnotations" class="wide-button danger-quiet">Clear annotations</button>
+        <p class="hint">Click once for the start, move to preview, then click the end. Annotations stay above the physics.</p>
+        <div class="subsection-heading">Drawn annotations</div>
+        <div id="annotationList" class="annotation-list"><p class="empty-list">No annotations yet.</p></div>
+      </section>
+    </aside>
+  </main>
+  <nav class="mobile-dock" aria-label="Mobile workspace navigation">
+    <a href="#diagramPanel">Canvas</a>
+    <a href="#areasPanel">Areas</a>
+    <a href="#spaceInspector">Properties</a>
+    <a href="#toolsPanel">Tools</a>
+  </nav>
+  <script>
+    window.TESTFIT_FEATURE_STAGE = ({
+      "stage-1-core": 1,
+      "stage-2-boundaries-fluid": 2,
+      "stage-3-style": 3,
+      "stage-4-advanced": 4,
+      "no-project-annotations": 1,
+      "no-svg-custom": 2,
+      "no-edge-controls": 3,
+      "no-location-tools": 4
+    })[new URLSearchParams(location.search).get("variant")] || 4;
+  </script>
+  <script src="script.js"></script>
+  <script src="variant.js"></script>
+</body>
+</html>
