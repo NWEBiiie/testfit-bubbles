@@ -8,6 +8,7 @@ const status = $("#status");
 const COLORS = ["#24a5df", "#ea198c", "#ffe72d", "#201d1a", "#35b56a", "#f06036", "#7669b0"];
 const HISTORICAL_VARIANT = Number.isFinite(Number(window.TESTFIT_FEATURE_STAGE));
 const AREA_SCALE = HISTORICAL_VARIANT ? 2.75 : 2.2;
+const DEFAULT_EXPORT_SCALE = .125;
 const PROFILE_SAMPLES = 96;
 const FEATURE_STAGE = Math.max(1, Math.min(5, Number(window.TESTFIT_FEATURE_STAGE) || 5));
 const DEFAULT_STYLE = FEATURE_STAGE >= 3
@@ -1439,6 +1440,7 @@ function settingsSnapshot() {
     annotationStyle: $("#annotationStyle").value, annotationWeight: +$("#annotationWeight").value,
     annotationHeadStyle: $("#annotationHeadStyle").value, annotationEnds: $("#annotationEnds").value,
     annotationColor: $("#annotationColor").value,
+    exportScale: $("#exportScale")?.value || String(DEFAULT_EXPORT_SCALE),
     defaultStyle: clone(defaultStyle)
   };
 }
@@ -1552,6 +1554,11 @@ function applySettings(settings) {
   };
   Object.entries(assignments).forEach(([key, [selector, property, fallback]]) => { $(selector)[property] = settings[key] ?? fallback; });
   defaultStyle = { ...DEFAULT_STYLE, ...(settings.defaultStyle || {}) };
+  const exportScaleControl = $("#exportScale");
+  if (exportScaleControl) {
+    const savedScale = String(settings.exportScale ?? DEFAULT_EXPORT_SCALE);
+    exportScaleControl.value = [...exportScaleControl.options].some(option => option.value === savedScale) ? savedScale : String(DEFAULT_EXPORT_SCALE);
+  }
   $("#marginValue").textContent = $("#margin").value + " px";
   $("#lineWeightValue").textContent = $("#lineWeight").value + " px";
   $("#annotationWeightValue").textContent = $("#annotationWeight").value + " px";
@@ -1563,6 +1570,50 @@ function svgEscape(value) {
 
 function escapeHtml(value) { return svgEscape(value); }
 function pathData(points, close = true) { return points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ") + (close ? " Z" : ""); }
+
+function exportScaleSpec() {
+  const control = $("#exportScale");
+  const inchesPerFoot = clamp(Number(control?.value) || DEFAULT_EXPORT_SCALE, 1 / 256, 4);
+  const label = control?.selectedOptions?.[0]?.textContent?.trim() || `1/8\" = 1'-0\"`;
+  return { inchesPerFoot, label };
+}
+
+function diagramExportBounds() {
+  const points = [];
+  boundaries.filter(boundary => boundary.visible !== false).forEach(boundary => {
+    if (boundary.type === "rect") {
+      points.push(
+        { x: boundary.x, y: boundary.y },
+        { x: boundary.x + boundary.width, y: boundary.y + boundary.height }
+      );
+    } else if (Array.isArray(boundary.points)) points.push(...boundary.points);
+  });
+  nodes.forEach(node => points.push(...shapePoints(node)));
+  annotations.forEach(annotation => points.push(
+    { x: annotation.x1, y: annotation.y1 },
+    { x: annotation.x2, y: annotation.y2 }
+  ));
+  if (!points.length) return { x: 0, y: 0, width: w, height: h };
+  const padding = AREA_SCALE * 8;
+  const xs = points.map(point => point.x), ys = points.map(point => point.y);
+  const minX = Math.min(...xs) - padding, maxX = Math.max(...xs) + padding;
+  const minY = Math.min(...ys) - padding, maxY = Math.max(...ys) + padding;
+  return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
+}
+
+function scaledExportInfo() {
+  buildShapeProfiles();
+  const bounds = diagramExportBounds();
+  const scale = exportScaleSpec();
+  return {
+    bounds,
+    ...scale,
+    widthInches: bounds.width / AREA_SCALE * scale.inchesPerFoot,
+    heightInches: bounds.height / AREA_SCALE * scale.inchesPerFoot
+  };
+}
+
+function inchLabel(value) { return `${Number(value.toFixed(2))}\"`; }
 
 function svgDash(style) {
   if (style === "dashed" || style === "sketch") return ' stroke-dasharray="10 7"';
@@ -1594,7 +1645,8 @@ function svgArrowMarkup(x1, y1, x2, y2, color, width, lineStyle, headStyle = "fi
 }
 
 function buildSvg() {
-  buildShapeProfiles();
+  const exportInfo = scaledExportInfo();
+  const { bounds } = exportInfo;
   const marker = '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker><pattern id="parallel" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="#171717" stroke-opacity=".35"/></pattern><pattern id="dots" width="11" height="11" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.4" fill="#171717" fill-opacity=".35"/></pattern></defs>';
   const boundarySvg = boundaries.filter(boundary => boundary.visible !== false).map(boundary => {
     const dash = boundary.kind === "void" ? ' stroke-dasharray="5 5"' : "";
@@ -1625,7 +1677,213 @@ function buildSvg() {
     return `<g>${misregister}<path d="${closed}" fill="${fill}"/>${pattern}<path d="${outlinePath}" fill="none" stroke="${outline}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"${svgDash(node.style.outline)}/><text x="${node.x}" y="${node.y - 5}" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="600" fill="${labelColor}">${svgEscape(node.name)}</text><text x="${node.x}" y="${node.y + 14}" text-anchor="middle" font-family="system-ui" font-size="12" fill="${labelColor}">${Math.round(node.effectiveArea).toLocaleString()} sf</text>${anchor}</g>`;
   }).join("");
   const annotationSvg = annotations.map(annotation => svgArrowMarkup(annotation.x1, annotation.y1, annotation.x2, annotation.y2, annotation.color, annotation.width, annotation.lineStyle, annotation.headStyle, annotation.doubleHead)).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w)}" height="${Math.round(h)}" viewBox="0 0 ${Math.round(w)} ${Math.round(h)}"><rect width="100%" height="100%" fill="#f7f9f6"/>${marker}${boundarySvg}${connectionSvg}${nodeSvg}${annotationSvg}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${exportInfo.widthInches.toFixed(4)}in" height="${exportInfo.heightInches.toFixed(4)}in" viewBox="${bounds.x.toFixed(2)} ${bounds.y.toFixed(2)} ${bounds.width.toFixed(2)} ${bounds.height.toFixed(2)}" preserveAspectRatio="xMinYMin meet"><title>TestFit Bubbles — ${svgEscape(exportInfo.label)}</title><desc>Architectural bubble diagram exported at ${svgEscape(exportInfo.label)}. Print or place at 100% actual size.</desc><metadata data-units="feet" data-world-units-per-foot="${AREA_SCALE}" data-inches-per-foot="${exportInfo.inchesPerFoot}" data-scale="${svgEscape(exportInfo.label)}"/>${marker}<rect x="${bounds.x.toFixed(2)}" y="${bounds.y.toFixed(2)}" width="${bounds.width.toFixed(2)}" height="${bounds.height.toFixed(2)}" fill="#f7f9f6"/>${boundarySvg}${connectionSvg}${nodeSvg}${annotationSvg}</svg>`;
+}
+
+function pdfNumber(value) { return Number(Number(value).toFixed(8)).toString(); }
+
+function pdfSafeText(value) {
+  return String(value).normalize("NFKD").replace(/[^\x20-\x7e]/g, "?").replace(/([\\()])/g, "\\$1");
+}
+
+function hexRgb(hex) {
+  let value = String(hex || "#171717").replace("#", "").slice(0, 6);
+  if (value.length === 3) value = value.split("").map(character => character + character).join("");
+  if (!/^[0-9a-f]{6}$/i.test(value)) value = "171717";
+  return [parseInt(value.slice(0, 2), 16), parseInt(value.slice(2, 4), 16), parseInt(value.slice(4, 6), 16)];
+}
+
+function pdfColor(hex, whiteMix = 0) {
+  const rgb = hexRgb(hex).map(channel => Math.round(channel + (255 - channel) * whiteMix) / 255);
+  return rgb.map(pdfNumber).join(" ");
+}
+
+function pdfPoint(point, info) {
+  return {
+    x: (point.x - info.bounds.x) * info.pointScale,
+    y: info.footerPoints + (info.bounds.y + info.bounds.height - point.y) * info.pointScale
+  };
+}
+
+function pdfPath(points, info, close = true) {
+  if (!points?.length) return "";
+  return points.map((point, index) => {
+    const output = pdfPoint(point, info);
+    return `${pdfNumber(output.x)} ${pdfNumber(output.y)} ${index ? "l" : "m"}`;
+  }).join("\n") + (close ? "\nh" : "");
+}
+
+function pdfDash(style, info) {
+  if (style === "dashed" || style === "sketch") return `[${pdfNumber(10 * info.pointScale)} ${pdfNumber(7 * info.pointScale)}] 0 d`;
+  if (style === "dotted") return `[${pdfNumber(Math.max(.7, info.pointScale))} ${pdfNumber(8 * info.pointScale)}] 0 d`;
+  return "[] 0 d";
+}
+
+function pdfText(text, x, y, size, color, info, bold = false, fixedSize = false) {
+  const value = pdfSafeText(text);
+  const position = pdfPoint({ x, y }, info);
+  const fontSize = fixedSize ? size : Math.max(1, size * info.pointScale);
+  const estimatedWidth = value.length * fontSize * .27;
+  return `BT /${bold ? "F2" : "F1"} ${pdfNumber(fontSize)} Tf ${pdfColor(color)} rg 1 0 0 1 ${pdfNumber(position.x - estimatedWidth)} ${pdfNumber(position.y - fontSize * .34)} Tm (${value}) Tj ET`;
+}
+
+function pdfCircle(x, y, radius) {
+  const k = .5522847498, c = radius * k;
+  return `${pdfNumber(x + radius)} ${pdfNumber(y)} m\n${pdfNumber(x + radius)} ${pdfNumber(y + c)} ${pdfNumber(x + c)} ${pdfNumber(y + radius)} ${pdfNumber(x)} ${pdfNumber(y + radius)} c\n${pdfNumber(x - c)} ${pdfNumber(y + radius)} ${pdfNumber(x - radius)} ${pdfNumber(y + c)} ${pdfNumber(x - radius)} ${pdfNumber(y)} c\n${pdfNumber(x - radius)} ${pdfNumber(y - c)} ${pdfNumber(x - c)} ${pdfNumber(y - radius)} ${pdfNumber(x)} ${pdfNumber(y - radius)} c\n${pdfNumber(x + c)} ${pdfNumber(y - radius)} ${pdfNumber(x + radius)} ${pdfNumber(y - c)} ${pdfNumber(x + radius)} ${pdfNumber(y)} c\nh`;
+}
+
+function pdfArrowMarkup(x1, y1, x2, y2, color, width, lineStyle, headStyle, doubleHead, info) {
+  const dx = x2 - x1, dy = y2 - y1, distance = Math.max(1, Math.hypot(dx, dy));
+  const ux = dx / distance, uy = dy / distance, size = Math.max(12, width * 4.2), angle = Math.atan2(dy, dx);
+  const shaftStart = { x: doubleHead ? x1 + ux * size * .92 : x1, y: doubleHead ? y1 + uy * size * .92 : y1 };
+  const shaftEnd = { x: x2 - ux * size * .92, y: y2 - uy * size * .92 };
+  const left = { x: x2 - Math.cos(angle - .48) * size, y: y2 - Math.sin(angle - .48) * size };
+  const right = { x: x2 - Math.cos(angle + .48) * size, y: y2 - Math.sin(angle + .48) * size };
+  const reverseAngle = angle + Math.PI;
+  const reverseLeft = { x: x1 - Math.cos(reverseAngle - .48) * size, y: y1 - Math.sin(reverseAngle - .48) * size };
+  const reverseRight = { x: x1 - Math.cos(reverseAngle + .48) * size, y: y1 - Math.sin(reverseAngle + .48) * size };
+  let output = `q ${pdfColor(color)} RG ${pdfNumber(Math.max(.35, width * info.pointScale))} w 1 J 1 j ${pdfDash(lineStyle, info)}\n${pdfPath([shaftStart, shaftEnd], info, false)} S\nQ\n`;
+  const heads = [[{ x: x2, y: y2 }, left, right]];
+  if (doubleHead) heads.push([{ x: x1, y: y1 }, reverseLeft, reverseRight]);
+  heads.forEach(points => {
+    if (headStyle === "open") output += `q ${pdfColor(color)} RG ${pdfNumber(Math.max(.35, width * info.pointScale))} w 1 J 1 j\n${pdfPath([points[1], points[0], points[2]], info, false)} S\nQ\n`;
+    else {
+      const fill = headStyle === "outline" ? "1 1 1" : pdfColor(color);
+      output += `q ${fill} rg ${pdfColor(color)} RG ${pdfNumber(Math.max(.35, width * info.pointScale))} w\n${pdfPath(points, info)} ${headStyle === "outline" ? "B" : "f"}\nQ\n`;
+    }
+  });
+  return output;
+}
+
+function chooseCalibrationFeet(inchesPerFoot) {
+  const targetFeet = 1 / inchesPerFoot;
+  return [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].find(value => value >= targetFeet) || 1000;
+}
+
+function buildPdfContent(info) {
+  const output = [];
+  output.push(`q ${pdfColor("#f7f9f6")} rg 0 0 ${pdfNumber(info.pageWidthPoints)} ${pdfNumber(info.pageHeightPoints)} re f Q`);
+  boundaries.filter(boundary => boundary.visible !== false).forEach(boundary => {
+    const points = boundary.type === "rect" ? [
+      { x: boundary.x, y: boundary.y }, { x: boundary.x + boundary.width, y: boundary.y },
+      { x: boundary.x + boundary.width, y: boundary.y + boundary.height }, { x: boundary.x, y: boundary.y + boundary.height }
+    ] : boundary.points;
+    const fill = boundary.kind === "void" ? pdfColor(boundary.color, .9) : "1 1 1";
+    output.push(`q ${fill} rg ${pdfColor(boundary.color)} RG ${pdfNumber(3 * info.pointScale)} w ${boundary.kind === "void" ? `[${pdfNumber(5 * info.pointScale)} ${pdfNumber(5 * info.pointScale)}] 0 d` : "[] 0 d"}\n${pdfPath(points, info)} B Q`);
+  });
+  if ($("#links").checked) edges.forEach(edge => {
+    const a = nodes.find(node => node.id === edge.a), b = nodes.find(node => node.id === edge.b);
+    if (!a || !b) return;
+    const style = edge.style || $("#connectionStyle").value;
+    const color = edge.color || $("#connectionColor").value;
+    const width = edge.width ?? +$("#lineWeight").value;
+    if (style === "arrow") output.push(pdfArrowMarkup(a.x, a.y, b.x, b.y, color, width, "solid", "filled", false, info));
+    else output.push(`q ${pdfColor(color)} RG ${pdfNumber(Math.max(.35, width * info.pointScale))} w 1 J ${pdfDash(style, info)}\n${pdfPath([a, b], info, false)} S Q`);
+  });
+  nodes.forEach(node => {
+    const points = shapePoints(node), path = pdfPath(points, info);
+    const fill = node.style.fill === "solid" ? pdfColor(node.color) : node.style.fill === "tint" ? pdfColor(node.color, .79) : node.style.fill === "blueprint" ? pdfColor("#16456d") : null;
+    const outline = node.style.fill === "blueprint" ? "#d9f1ff" : node.style.fill === "outline" ? node.color : "#171717";
+    if (node.style.misregister) {
+      [{ x: -4, y: 2, color: "#00a8df" }, { x: 4, y: -2, color: "#ec198c" }].forEach(offset => {
+        const offsetPoints = points.map(point => ({ x: point.x + offset.x, y: point.y + offset.y }));
+        output.push(`q ${pdfColor(offset.color)} RG ${pdfNumber(3 * info.pointScale)} w 1 J 1 j\n${pdfPath(offsetPoints, info)} S Q`);
+      });
+    }
+    if (fill) output.push(`q ${fill} rg\n${path} f Q`);
+    if (node.style.pattern !== "none") {
+      const xs = points.map(point => point.x), ys = points.map(point => point.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+      const patternColor = node.style.fill === "blueprint" ? "#d9f1ff" : "#777777";
+      const marks = [];
+      if (node.style.pattern === "parallel") {
+        const height = maxY - minY;
+        for (let x = minX - height; x <= maxX; x += 10) marks.push(`${pdfPath([{ x, y: maxY }, { x: x + height * 2, y: minY }], info, false)} S`);
+      } else {
+        for (let x = minX; x <= maxX; x += 11) for (let y = minY; y <= maxY; y += 11) {
+          const point = pdfPoint({ x, y }, info);
+          marks.push(`${pdfCircle(point.x, point.y, Math.max(.45, 1.4 * info.pointScale))} f`);
+        }
+      }
+      output.push(`q\n${path} W n\n${pdfColor(patternColor)} RG ${pdfColor(patternColor)} rg ${pdfNumber(Math.max(.3, info.pointScale))} w\n${marks.join("\n")}\nQ`);
+    }
+    const outlinePoints = node.style.outline === "open" ? openOutlinePoints(node, points) : points;
+    output.push(`q ${pdfColor(outline)} RG ${pdfNumber(3 * info.pointScale)} w 1 J 1 j ${pdfDash(node.style.outline, info)}\n${pdfPath(outlinePoints, info, node.style.outline !== "open")} S Q`);
+    const labelColor = node.style.fill === "outline" || node.style.fill === "tint" ? "#171717" : node.style.fill === "blueprint" ? "#ffffff" : contrastColor(node.color);
+    output.push(pdfText(node.name, node.x, node.y - 5, 14, labelColor, info, true));
+    output.push(pdfText(`${Math.round(node.effectiveArea).toLocaleString()} sf`, node.x, node.y + 14, 12, labelColor, info));
+    if (node.pinned && $("#showAnchor").checked) {
+      const point = pdfPoint(node, info), radius = 9 * info.pointScale;
+      output.push(`q 1 1 1 rg ${pdfColor("#171717")} RG ${pdfNumber(2 * info.pointScale)} w\n${pdfCircle(point.x, point.y, radius)} B\n${pdfNumber(point.x - 13 * info.pointScale)} ${pdfNumber(point.y)} m ${pdfNumber(point.x + 13 * info.pointScale)} ${pdfNumber(point.y)} l S\n${pdfNumber(point.x)} ${pdfNumber(point.y - 13 * info.pointScale)} m ${pdfNumber(point.x)} ${pdfNumber(point.y + 13 * info.pointScale)} l S Q`);
+    }
+  });
+  annotations.forEach(annotation => output.push(pdfArrowMarkup(annotation.x1, annotation.y1, annotation.x2, annotation.y2, annotation.color, annotation.width, annotation.lineStyle, annotation.headStyle, annotation.doubleHead, info)));
+
+  const barX = 36, barY = 15, barLength = info.calibrationFeet * info.inchesPerFoot * 72;
+  output.push(`q 1 1 1 rg 0 0 ${pdfNumber(info.pageWidthPoints)} ${pdfNumber(info.footerPoints)} re f ${pdfColor("#171717")} RG 1 w\n${pdfNumber(barX)} ${pdfNumber(barY)} m ${pdfNumber(barX + barLength)} ${pdfNumber(barY)} l S\n${pdfNumber(barX)} ${pdfNumber(barY - 4)} m ${pdfNumber(barX)} ${pdfNumber(barY + 4)} l S\n${pdfNumber(barX + barLength)} ${pdfNumber(barY - 4)} m ${pdfNumber(barX + barLength)} ${pdfNumber(barY + 4)} l S\nBT /F2 8 Tf ${pdfColor("#171717")} rg 1 0 0 1 ${pdfNumber(barX)} 4 Tm (${pdfSafeText(`${info.calibrationFeet}'-0\" CALIBRATION`)}) Tj ET\nBT /F1 8 Tf 1 0 0 1 ${pdfNumber(barX + barLength + 12)} 12 Tm (${pdfSafeText(`${info.label} | Bluebeam measurement viewport embedded`)}) Tj ET Q`);
+  return output.join("\n") + "\n";
+}
+
+function serializePdf(objects, infoObjectNumber) {
+  const encoder = new TextEncoder();
+  const byteLength = value => encoder.encode(value).length;
+  let pdf = "%PDF-1.7\n% TestFit Bubbles\n", offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach(offset => { pdf += `${String(offset).padStart(10, "0")} 00000 n \n`; });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info ${infoObjectNumber} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return encoder.encode(pdf);
+}
+
+function buildScaledPdf() {
+  const exportInfo = scaledExportInfo();
+  const pointScale = 72 * exportInfo.inchesPerFoot / AREA_SCALE;
+  const footerPoints = 30, calibrationFeet = chooseCalibrationFeet(exportInfo.inchesPerFoot);
+  const drawingWidthPoints = exportInfo.widthInches * 72, drawingHeightPoints = exportInfo.heightInches * 72;
+  const pageWidthPoints = Math.max(drawingWidthPoints, calibrationFeet * exportInfo.inchesPerFoot * 72 + 260);
+  const pageHeightPoints = drawingHeightPoints + footerPoints;
+  if (pageWidthPoints > 14400 || pageHeightPoints > 14400) throw new Error("This diagram exceeds the PDF 200-inch page limit at the selected scale. Choose a smaller scale.");
+  const info = { ...exportInfo, pointScale, footerPoints, calibrationFeet, pageWidthPoints, pageHeightPoints };
+  const content = buildPdfContent(info);
+  const feetPerPoint = 1 / (72 * info.inchesPerFoot);
+  const scaleRatio = pdfSafeText(info.label.replaceAll('"', " in").replaceAll("'", " ft"));
+  const measure = `<< /Type /Measure /Subtype /RL /R (${scaleRatio}) /X [<< /Type /NumberFormat /U (ft) /C ${pdfNumber(feetPerPoint)} /D 16 >>] /Y [<< /Type /NumberFormat /U (ft) /C ${pdfNumber(feetPerPoint)} /D 16 >>] /D [<< /Type /NumberFormat /U (ft) /C 1 /D 16 >> << /Type /NumberFormat /U (in) /C 12 /F /F /D 16 >>] /A [<< /Type /NumberFormat /U (sq ft) /C 1 /D 100 >>] /CYX 1 /O [0 0] >>`;
+  const viewport = `<< /Type /Viewport /BBox [0 0 ${pdfNumber(pageWidthPoints)} ${pdfNumber(pageHeightPoints)}] /Name (TestFit Bubbles - ${scaleRatio}) /Measure 8 0 R >>`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R /PageMode /UseNone >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(pageWidthPoints)} ${pdfNumber(pageHeightPoints)}] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R /VP [7 0 R] >>`,
+    `<< /Length ${new TextEncoder().encode(content).length} >>\nstream\n${content}endstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+    viewport,
+    measure,
+    `<< /Title (TestFit Bubbles - ${scaleRatio}) /Author (TestFit Bubbles) /Subject (Architectural bubble diagram with embedded measurement scale) /Creator (TestFit Bubbles) >>`
+  ];
+  return {
+    bytes: serializePdf(objects, 9),
+    pageWidthInches: pageWidthPoints / 72,
+    pageHeightInches: pageHeightPoints / 72,
+    calibrationFeet,
+    label: info.label
+  };
+}
+
+function printScaledLayout() {
+  const exportInfo = scaledExportInfo();
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    status.textContent = "Allow pop-ups, then try Print to scale again.";
+    return;
+  }
+  popup.document.open();
+  popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>TestFit Bubbles — ${svgEscape(exportInfo.label)}</title><style>@page{margin:.25in}html,body{margin:0;background:#fff}.print-note{margin:12px;padding:10px 14px;border:1px solid #cbd3cd;border-radius:8px;font:14px Arial,sans-serif;color:#17221d}.print-note strong{display:block;margin-bottom:4px}svg{display:block}@media print{.print-note{display:none}}</style></head><body><div class="print-note"><strong>${svgEscape(exportInfo.label)} · ${inchLabel(exportInfo.widthInches)} × ${inchLabel(exportInfo.heightInches)}</strong>Choose 100% or Actual size in the print dialog. Do not use Fit to page.</div>${buildSvg()}<script>addEventListener("load",()=>setTimeout(()=>print(),250));<\/script></body></html>`);
+  popup.document.close();
+  status.textContent = `Print sheet opened at ${exportInfo.label}. Choose 100% or Actual size.`;
 }
 
 $("#addForm").onsubmit = event => {
@@ -1767,9 +2025,23 @@ $("#projectFile").onchange = async event => {
   catch (error) { status.textContent = `Could not open project: ${error.message}`; }
   event.target.value = "";
 };
-$("#exportSvg").onclick = () => { downloadBlob("testfit-diagram.svg", buildSvg(), "image/svg+xml"); status.textContent = "Editable SVG exported."; };
-$("#exportPng").onclick = () => { draw(); const anchor = document.createElement("a"); anchor.download = "testfit-diagram.png"; anchor.href = canvas.toDataURL("image/png"); anchor.click(); status.textContent = "PNG exported."; };
-$("#printLayout").onclick = () => { draw(); window.print(); };
+$("#exportSvg").onclick = () => {
+  const exportInfo = scaledExportInfo();
+  downloadBlob("testfit-diagram-scaled.svg", buildSvg(), "image/svg+xml");
+  status.textContent = `SVG exported at ${exportInfo.label}: ${inchLabel(exportInfo.widthInches)} × ${inchLabel(exportInfo.heightInches)}. Print at 100%.`;
+};
+$("#exportPdf").onclick = () => {
+  try {
+    const pdf = buildScaledPdf();
+    downloadBlob("testfit-diagram-scaled.pdf", pdf.bytes, "application/pdf");
+    status.textContent = `Vector PDF exported at ${pdf.label}: ${inchLabel(pdf.pageWidthInches)} × ${inchLabel(pdf.pageHeightInches)} with a ${pdf.calibrationFeet}' Bluebeam calibration line.`;
+  } catch (error) {
+    status.textContent = `PDF export could not be created: ${error.message}`;
+  }
+};
+$("#exportPng").onclick = () => { draw(); const anchor = document.createElement("a"); anchor.download = "testfit-diagram.png"; anchor.href = canvas.toDataURL("image/png"); anchor.click(); status.textContent = "PNG exported at screen resolution. Use SVG or Print to scale for exact architectural scale."; };
+$("#printLayout").onclick = printScaledLayout;
+if ($("#exportScale")) $("#exportScale").onchange = () => { status.textContent = `Export scale set to ${exportScaleSpec().label}. PDF, SVG, and Print will use actual size.`; };
 
 new ResizeObserver(resize).observe(canvas);
 resize();

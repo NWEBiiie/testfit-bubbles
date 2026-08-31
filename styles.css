@@ -29,6 +29,8 @@ small { color: #96c9ad; font-size: .68rem; letter-spacing: .15em; }
 h1 { margin: 2px 0 0; font: 500 2.05rem Georgia, serif; }
 h2 { margin: 0 0 14px; font-size: .78rem; letter-spacing: .09em; text-transform: uppercase; }
 .actions, .button-row { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+.export-scale { min-width: 142px; display: grid; gap: 2px; color: #b8c9c0; font-size: .62rem; font-weight: 750; letter-spacing: .03em; }
+.export-scale select { min-width: 142px; padding: 6px 28px 6px 8px; border-color: #66756d; color: #18201d; background: #fff; font-size: .72rem; }
 
 button {
   border: 1px solid #c7cec9;
@@ -164,6 +166,8 @@ canvas.drawing { cursor: crosshair; }
   header { height: auto; min-height: 0; flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; }
   .actions { width: 100%; max-width: none; flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overscroll-behavior-x: contain; padding: 2px 0 5px; scrollbar-width: thin; }
   .actions button { flex: 0 0 auto; min-height: 42px; }
+  .export-scale { flex: 0 0 154px; }
+  .export-scale select { min-height: 34px !important; }
   main { height: auto; min-height: 0; display: flex; flex-direction: column; overflow: visible; }
   article { order: 1; height: 64svh; min-height: 430px; max-height: 680px; grid-template-rows: auto minmax(0, 1fr); scroll-margin-top: 8px; }
   .left-sidebar { order: 2; width: 100%; height: auto; display: block; overflow: visible; box-shadow: 0 5px 18px #19251f14; }

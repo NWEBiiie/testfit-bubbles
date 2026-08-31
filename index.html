@@ -15,9 +15,39 @@
       <button id="exportProject">Save project</button>
       <button id="importProject">Open project</button>
       <input id="projectFile" type="file" accept=".json,.testfit.json,application/json" hidden>
+      <label class="export-scale">Export scale
+        <select id="exportScale" aria-label="Architectural export scale">
+          <optgroup label="Details and interiors">
+            <option value="3">3&quot; = 1'-0&quot;</option>
+            <option value="1.5">1-1/2&quot; = 1'-0&quot;</option>
+            <option value="1">1&quot; = 1'-0&quot;</option>
+            <option value="0.75">3/4&quot; = 1'-0&quot;</option>
+            <option value="0.5">1/2&quot; = 1'-0&quot;</option>
+            <option value="0.375">3/8&quot; = 1'-0&quot;</option>
+          </optgroup>
+          <optgroup label="Plans and elevations">
+            <option value="0.25">1/4&quot; = 1'-0&quot;</option>
+            <option value="0.1875">3/16&quot; = 1'-0&quot;</option>
+            <option value="0.125" selected>1/8&quot; = 1'-0&quot;</option>
+            <option value="0.09375">3/32&quot; = 1'-0&quot;</option>
+            <option value="0.0625">1/16&quot; = 1'-0&quot;</option>
+            <option value="0.03125">1/32&quot; = 1'-0&quot;</option>
+          </optgroup>
+          <optgroup label="Site plans">
+            <option value="0.1">1&quot; = 10'-0&quot;</option>
+            <option value="0.05">1&quot; = 20'-0&quot;</option>
+            <option value="0.0333333333">1&quot; = 30'-0&quot;</option>
+            <option value="0.025">1&quot; = 40'-0&quot;</option>
+            <option value="0.02">1&quot; = 50'-0&quot;</option>
+            <option value="0.0166666667">1&quot; = 60'-0&quot;</option>
+            <option value="0.01">1&quot; = 100'-0&quot;</option>
+          </optgroup>
+        </select>
+      </label>
+      <button id="exportPdf">Export scaled PDF</button>
       <button id="exportSvg">Export SVG</button>
       <button id="exportPng" class="primary">Export PNG</button>
-      <button id="printLayout">Print</button>
+      <button id="printLayout">Print to scale</button>
     </div>
   </header>
 
