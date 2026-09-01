@@ -54,6 +54,28 @@ const foamResponseFor = node => { const s = foamAmount(node); return s * s * (3 
 const selectedNode = () => nodes.find(node => node.id === selected) || null;
 const clone = value => JSON.parse(JSON.stringify(value));
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const straightShape = node => ["rect", "lshape", "custom"].includes(node?.shape);
+
+function normalizedRotation(value) {
+  let degrees = Number(value) || 0;
+  degrees = ((degrees + 180) % 360 + 360) % 360 - 180;
+  return Math.abs(degrees + 180) < 1e-8 ? 180 : degrees;
+}
+
+function rectangleDimensionsForArea(area, ratio = 1.35) {
+  const safeRatio = clamp(Number(ratio) || 1.35, .05, 20);
+  const height = Math.sqrt(Math.max(1, area) / safeRatio);
+  return { width: height * safeRatio, height };
+}
+
+function ensureRectangleDimensions(node) {
+  if (!Number.isFinite(node.rectWidth) || node.rectWidth <= 0 || !Number.isFinite(node.rectHeight) || node.rectHeight <= 0) {
+    const dimensions = rectangleDimensionsForArea(node.area);
+    node.rectWidth = dimensions.width;
+    node.rectHeight = dimensions.height;
+  }
+  return { width: node.rectWidth, height: node.rectHeight };
+}
 
 function randomSketch() {
   return {
@@ -69,12 +91,15 @@ function randomSketch() {
 
 function createNode(name, area, index = nodes.length) {
   const angle = index * 2.3;
+  const rectangle = rectangleDimensionsForArea(area);
   return {
     id: nextNodeId++, name, area, r: radius(area),
     x: w / 2 + Math.cos(angle) * 130, y: h / 2 + Math.sin(angle) * 120,
     vx: 0, vy: 0, pinned: false, color: COLORS[index % COLORS.length],
     ...DEFAULT_PHYSICS, effectiveArea: area, sketch: randomSketch(),
-    shape: "circle", customPoints: null, boundaryId: null, style: clone(defaultStyle)
+    shape: "circle", customPoints: null, boundaryId: null, style: clone(defaultStyle),
+    rotation: 0, rectWidth: rectangle.width, rectHeight: rectangle.height,
+    snapToBoundary: false, snapDistance: 5
   };
 }
 
@@ -272,6 +297,19 @@ function syncInspector() {
   $("#selectedAreaName").value = node.name;
   $("#selectedAreaSize").value = node.area;
   $("#roomShape").value = node.shape || "circle";
+  const rotation = normalizedRotation(node.rotation);
+  node.rotation = rotation;
+  $("#shapeRotation").value = rotation;
+  $("#shapeRotationNumber").value = Math.round(rotation * 10) / 10;
+  $("#shapeRotation").disabled = node.shape === "circle";
+  $("#shapeRotationNumber").disabled = node.shape === "circle";
+  const rectangle = ensureRectangleDimensions(node);
+  $("#rectangleControls").classList.toggle("is-hidden", node.shape !== "rect");
+  $("#rectWidth").value = Number(rectangle.width.toFixed(2));
+  $("#rectHeight").value = Number(rectangle.height.toFixed(2));
+  $("#rectRatio").value = Number((rectangle.width / rectangle.height).toFixed(3));
+  $("#rectSnap").checked = !!node.snapToBoundary;
+  $("#rectSnapDistance").value = Number((node.snapDistance ?? 5).toFixed(2));
   $("#coordX").value = Math.round(node.x);
   $("#coordY").value = Math.round(node.y);
   $("#pinSpace").textContent = node.pinned ? "Release location" : "Fix location";
@@ -371,7 +409,7 @@ const toWorld = point => ({ x: cameraX + (point.x - w / 2) / zoomLevel, y: camer
 const eventPoint = event => toWorld(screenPoint(event));
 
 function hit(point) {
-  return [...nodes].reverse().find(node => Math.hypot(point.x - node.x, point.y - node.y) <= maxShapeRadius(node) * 1.04);
+  return [...nodes].reverse().find(node => pointInPolygon(point, shapePoints(node)));
 }
 
 function setZoom(value, anchor = { x: w / 2, y: h / 2 }) {
@@ -671,6 +709,7 @@ canvas.onpointermove = event => {
   drag.node.x = point.x - drag.ox;
   drag.node.y = point.y - drag.oy;
   constrain(drag.node, false);
+  snapRectangleToBoundary(drag.node);
   if (Math.hypot(point.x - drag.sx, point.y - drag.sy) > 5 / zoomLevel) drag.moved = true;
 };
 
@@ -702,7 +741,7 @@ canvas.onpointerup = event => {
       node.customPoints = normalized.points;
       node.shape = "custom";
       node.vx = node.vy = 0;
-      status.textContent = `${node.name} now uses your filleted custom outline.`;
+      status.textContent = `${node.name} now uses your straight-edged custom outline.`;
       syncInspector();
     } else status.textContent = "The room sketch needs a longer closed outline.";
     clearTool(true);
@@ -822,8 +861,8 @@ function normalizeCustomPoints(points, r) {
 function basePolygon(node) {
   const targetArea = Math.PI * node.r * node.r;
   if (node.shape === "rect") {
-    const aspect = 1.35;
-    const height = Math.sqrt(targetArea / aspect), width = height * aspect;
+    const dimensions = ensureRectangleDimensions(node);
+    const width = dimensions.width * AREA_SCALE, height = dimensions.height * AREA_SCALE;
     return [{ x: -width / 2, y: -height / 2 }, { x: width / 2, y: -height / 2 }, { x: width / 2, y: height / 2 }, { x: -width / 2, y: height / 2 }];
   }
   if (node.shape === "lshape") {
@@ -832,8 +871,21 @@ function basePolygon(node) {
     const scale = Math.sqrt(targetArea / Math.abs(polygonArea(raw)));
     return raw.map(point => ({ x: (point.x - center.x) * scale, y: (point.y - center.y) * scale }));
   }
-  if (node.shape === "custom" && node.customPoints?.length >= 3) return node.customPoints;
+  if (node.shape === "custom" && node.customPoints?.length >= 3) {
+    const currentArea = Math.max(1, Math.abs(polygonArea(node.customPoints)));
+    const scale = Math.sqrt(targetArea / currentArea);
+    return node.customPoints.map(point => ({ x: point.x * scale, y: point.y * scale }));
+  }
   return null;
+}
+
+function rotatedBasePolygon(node) {
+  const polygon = basePolygon(node);
+  if (!polygon) return null;
+  const angle = normalizedRotation(node.rotation) * Math.PI / 180;
+  if (Math.abs(angle) < 1e-8) return polygon;
+  const cosine = Math.cos(angle), sine = Math.sin(angle);
+  return polygon.map(point => ({ x: point.x * cosine - point.y * sine, y: point.x * sine + point.y * cosine }));
 }
 
 function rayPolygonDistance(points, angle) {
@@ -852,10 +904,17 @@ function rayPolygonDistance(points, angle) {
 }
 
 function baseRadiusAt(node, angle) {
-  const polygon = basePolygon(node);
+  const polygon = rotatedBasePolygon(node);
   if (!polygon) return node.r;
   const distance = rayPolygonDistance(polygon, angle);
   return Number.isFinite(distance) && distance > node.r * .08 ? distance : node.r;
+}
+
+function baseSupportAt(node, angle) {
+  const polygon = rotatedBasePolygon(node);
+  if (!polygon) return node.r;
+  const dx = Math.cos(angle), dy = Math.sin(angle);
+  return Math.max(...polygon.map(point => point.x * dx + point.y * dy));
 }
 
 function maxShapeRadius(node) {
@@ -913,6 +972,71 @@ function closestOnBoundary(point, boundary) {
   return candidates.sort((a, b) => ((point.x - a.x) ** 2 + (point.y - a.y) ** 2) - ((point.x - b.x) ** 2 + (point.y - b.y) ** 2))[0];
 }
 
+function boundarySegments(boundary) {
+  const points = boundary.type === "rect" ? [
+    { x: boundary.x, y: boundary.y },
+    { x: boundary.x + boundary.width, y: boundary.y },
+    { x: boundary.x + boundary.width, y: boundary.y + boundary.height },
+    { x: boundary.x, y: boundary.y + boundary.height }
+  ] : boundary.points;
+  return points.map((start, index) => ({ start, end: points[(index + 1) % points.length] }));
+}
+
+function closestPointOnSegment(point, start, end) {
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const t = clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+  return { x: start.x + t * dx, y: start.y + t * dy };
+}
+
+function inwardDirection(boundary, pointOnEdge, reference) {
+  let dx = reference.x - pointOnEdge.x, dy = reference.y - pointOnEdge.y, distance = Math.hypot(dx, dy);
+  if (distance < .001) {
+    const center = boundaryCenter(boundary);
+    dx = center.x - pointOnEdge.x; dy = center.y - pointOnEdge.y; distance = Math.hypot(dx, dy);
+  }
+  if (distance < .001) return { x: 0, y: 1 };
+  return { x: dx / distance, y: dy / distance };
+}
+
+function inwardSegmentNormal(boundary, segment) {
+  const dx = segment.end.x - segment.start.x, dy = segment.end.y - segment.start.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const midpoint = { x: (segment.start.x + segment.end.x) / 2, y: (segment.start.y + segment.end.y) / 2 };
+  const first = { x: -dy / length, y: dx / length };
+  const sampleDistance = 2;
+  if (boundaryContains(boundary, { x: midpoint.x + first.x * sampleDistance, y: midpoint.y + first.y * sampleDistance })) return first;
+  const second = { x: -first.x, y: -first.y };
+  if (boundaryContains(boundary, { x: midpoint.x + second.x * sampleDistance, y: midpoint.y + second.y * sampleDistance })) return second;
+  const center = boundaryCenter(boundary);
+  return (center.x - midpoint.x) * first.x + (center.y - midpoint.y) * first.y >= 0 ? first : second;
+}
+
+function snapRectangleToBoundary(node) {
+  node.snappedBoundaryId = null;
+  if (node.shape !== "rect" || !node.snapToBoundary) return false;
+  const boundary = outerBoundaryFor(node);
+  if (!boundary) return false;
+  const insideMargin = $("#contain").checked ? +$("#margin").value : 0;
+  let best = null;
+  for (const segment of boundarySegments(boundary)) {
+    const point = closestPointOnSegment(node, segment.start, segment.end);
+    const inward = inwardSegmentNormal(boundary, segment);
+    const centerDistance = (node.x - point.x) * inward.x + (node.y - point.y) * inward.y;
+    const outwardAngle = Math.atan2(-inward.y, -inward.x);
+    const support = baseSupportAt(node, outwardAngle);
+    const gap = centerDistance - support - insideMargin;
+    const score = Math.abs(gap);
+    if (!best || score < best.score) best = { point, inward, support, score };
+  }
+  const threshold = Math.max(.1, Number(node.snapDistance) || 5) * AREA_SCALE;
+  if (!best || best.score > threshold) return false;
+  node.x = best.point.x + best.inward.x * (best.support + insideMargin);
+  node.y = best.point.y + best.inward.y * (best.support + insideMargin);
+  node.vx = node.vy = 0;
+  node.snappedBoundaryId = boundary.id;
+  return true;
+}
+
 function outerBoundaryFor(node) {
   const outers = boundaries.filter(boundary => boundary.kind === "outer");
   if (!outers.length) return null;
@@ -932,6 +1056,36 @@ function boundarySize(boundary) {
 
 function containRadius(node) {
   return baseMaxShapeRadius(node) * (1 - foamResponseFor(node) * (.82 - .57 * node.weight));
+}
+
+function constrainStraightOuter(node, boundary, bounce) {
+  const margin = +$("#margin").value;
+  let moved = false;
+  if (boundary.type === "rect") {
+    const points = shapePoints(node), xs = points.map(point => point.x), ys = points.map(point => point.y);
+    const left = boundary.x + margin, right = boundary.x + boundary.width - margin;
+    const top = boundary.y + margin, bottom = boundary.y + boundary.height - margin;
+    let dx = 0, dy = 0;
+    if (Math.min(...xs) < left) dx = left - Math.min(...xs);
+    if (Math.max(...xs) + dx > right) dx += right - (Math.max(...xs) + dx);
+    if (Math.min(...ys) < top) dy = top - Math.min(...ys);
+    if (Math.max(...ys) + dy > bottom) dy += bottom - (Math.max(...ys) + dy);
+    if (dx || dy) { node.x += dx; node.y += dy; moved = true; }
+  } else {
+    for (let pass = 0; pass < 8; pass++) {
+      const corrections = [];
+      for (const point of shapePoints(node)) {
+        if (pointInPolygon(point, boundary.points)) continue;
+        const edge = closestOnPolygon(point, boundary.points);
+        const inward = inwardDirection(boundary, edge, boundaryCenter(boundary));
+        corrections.push({ x: edge.x + inward.x * (margin + 1) - point.x, y: edge.y + inward.y * (margin + 1) - point.y });
+      }
+      if (!corrections.length) break;
+      const correction = corrections.reduce((sum, value) => ({ x: sum.x + value.x / corrections.length, y: sum.y + value.y / corrections.length }), { x: 0, y: 0 });
+      node.x += correction.x; node.y += correction.y; moved = true;
+    }
+  }
+  if (moved && bounce) { node.vx *= -.2; node.vy *= -.2; }
 }
 
 function constrainOuterPolygon(node, boundary, bounce) {
@@ -991,7 +1145,8 @@ function constrain(node, bounce = true) {
   if (!$("#contain").checked) return;
   const outer = outerBoundaryFor(node);
   const rr = containRadius(node), margin = +$("#margin").value;
-  if (outer?.type === "polygon") constrainOuterPolygon(node, outer, bounce);
+  if (outer && straightShape(node)) constrainStraightOuter(node, outer, bounce);
+  else if (outer?.type === "polygon") constrainOuterPolygon(node, outer, bounce);
   else if (outer) {
     const limits = { left: outer.x + margin + rr, right: outer.x + outer.width - margin - rr, top: outer.y + margin + rr, bottom: outer.y + outer.height - margin - rr };
     if (limits.left > limits.right) node.x = (limits.left + limits.right) / 2;
@@ -1093,6 +1248,11 @@ function profileMean(radii) { return radii.reduce((sum, value) => sum + value * 
 
 function buildShapeProfiles() {
   for (const node of nodes) {
+    if (straightShape(node)) {
+      node.profile = null;
+      node.effectiveArea = node.area;
+      continue;
+    }
     const response = foamResponseFor(node);
     const base = Array.from({ length: PROFILE_SAMPLES }, (_, index) => baseRadiusAt(node, index / PROFILE_SAMPLES * Math.PI * 2));
     const target = profileMean(base);
@@ -1124,6 +1284,8 @@ function shapeRadius(node, angle) {
 }
 
 function shapePoints(node, count = 72, offsetX = 0, offsetY = 0) {
+  const polygon = rotatedBasePolygon(node);
+  if (polygon) return polygon.map(point => ({ x: node.x + offsetX + point.x, y: node.y + offsetY + point.y }));
   return Array.from({ length: count }, (_, index) => {
     const angle = index / count * Math.PI * 2;
     const r = shapeRadius(node, angle);
@@ -1162,6 +1324,7 @@ function physics(dt) {
       node.x += node.vx * dt * 60; node.y += node.vy * dt * 60;
     }
     constrain(node, true);
+    snapRectangleToBoundary(node);
   }
 }
 
@@ -1201,17 +1364,26 @@ function traceSmooth(points, close = true) {
 
 function openOutlinePoints(node, points) {
   const start = Math.floor(node.sketch.angle / (Math.PI * 2) * points.length) % points.length;
+  if (straightShape(node)) {
+    return Array.from({ length: points.length }, (_, index) => points[(start + index + 1) % points.length])
+      .map(point => ({ x: point.x + node.sketch.ox, y: point.y + node.sketch.oy }));
+  }
   const gapCount = Math.max(4, Math.floor(node.sketch.gap / (Math.PI * 2) * points.length));
   const output = [];
   for (let i = gapCount; i < points.length; i++) output.push(points[(start + i) % points.length]);
   return output.map(point => ({ x: point.x + node.sketch.ox, y: point.y + node.sketch.oy }));
 }
 
+function traceNodeShape(node, points, close = true) {
+  if (straightShape(node)) tracePolygon(points, close);
+  else traceSmooth(points, close);
+}
+
 function drawPattern(node, points) {
   if (node.style.pattern === "none") return;
   const extent = maxShapeRadius(node) * 1.55;
   ctx.save();
-  traceSmooth(points);
+  traceNodeShape(node, points);
   ctx.clip();
   ctx.strokeStyle = node.style.fill === "blueprint" ? "#d9f1ff77" : "#17171755";
   ctx.fillStyle = ctx.strokeStyle;
@@ -1237,10 +1409,10 @@ function strokeBubbleOutline(node, points, color, width, offset = null) {
   if (node.style.outline === "open") {
     drawingPoints = openOutlinePoints(node, drawingPoints);
     ctx.setLineDash([]);
-    traceSmooth(drawingPoints, false);
+    traceNodeShape(node, drawingPoints, false);
   } else {
     ctx.setLineDash(node.style.outline === "dashed" ? [10 / zoomLevel, 7 / zoomLevel] : node.style.outline === "dotted" ? [1 / zoomLevel, 8 / zoomLevel] : []);
-    traceSmooth(drawingPoints);
+    traceNodeShape(node, drawingPoints);
   }
   ctx.stroke();
   ctx.setLineDash([]);
@@ -1254,7 +1426,7 @@ function contrastColor(hex) {
 function drawBubble(node) {
   const points = shapePoints(node);
   ctx.save();
-  traceSmooth(points);
+  traceNodeShape(node, points);
   if (node.style.fill === "solid") ctx.fillStyle = node.color;
   else if (node.style.fill === "tint") ctx.fillStyle = node.color + "35";
   else if (node.style.fill === "blueprint") ctx.fillStyle = "#16456d";
@@ -1266,9 +1438,10 @@ function drawBubble(node) {
     strokeBubbleOutline(node, points, "#ec198c99", 3 / zoomLevel, { x: 4 / zoomLevel, y: -2 / zoomLevel });
   }
   const outlineColor = node.style.fill === "blueprint" ? "#d9f1ff" : node.style.fill === "outline" ? node.color : "#171717";
-  strokeBubbleOutline(node, points, selected === node.id ? "#17221d" : outlineColor, (selected === node.id ? 5 : 3) / zoomLevel);
+  const selectedOutline = node.snappedBoundaryId ? "#1f8a57" : "#17221d";
+  strokeBubbleOutline(node, points, selected === node.id ? selectedOutline : outlineColor, (selected === node.id ? 5 : 3) / zoomLevel);
   if (activeTool === "connect" && linkStart === node.id) {
-    ctx.save(); ctx.strokeStyle = "#1f8a57"; ctx.lineWidth = 7 / zoomLevel; ctx.setLineDash([4 / zoomLevel, 4 / zoomLevel]); traceSmooth(points); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.strokeStyle = "#1f8a57"; ctx.lineWidth = 7 / zoomLevel; ctx.setLineDash([4 / zoomLevel, 4 / zoomLevel]); traceNodeShape(node, points); ctx.stroke(); ctx.restore();
   }
 
   const small = node.r < 32;
@@ -1318,7 +1491,7 @@ function drawBoundary(boundary, draft = false) {
   ctx.lineWidth = (draft ? 2 : 3) / zoomLevel;
   ctx.setLineDash(draft ? [7 / zoomLevel, 6 / zoomLevel] : boundary.kind === "void" ? [5 / zoomLevel, 5 / zoomLevel] : []);
   ctx.fillStyle = draft ? "#2767490d" : boundary.kind === "void" ? color + "18" : "#ffffff45";
-  if (boundary.type === "polygon") { traceSmooth(boundary.points); ctx.fill(); ctx.stroke(); }
+  if (boundary.type === "polygon") { tracePolygon(boundary.points); ctx.fill(); ctx.stroke(); }
   else { ctx.fillRect(boundary.x, boundary.y, boundary.width, boundary.height); ctx.strokeRect(boundary.x, boundary.y, boundary.width, boundary.height); }
   if (!draft) {
     const center = boundaryCenter(boundary);
@@ -1402,7 +1575,7 @@ function drawDrafts() {
   if (boundaryDraft) drawBoundary({ type: "rect", x: Math.min(boundaryDraft.x1, boundaryDraft.x2), y: Math.min(boundaryDraft.y1, boundaryDraft.y2), width: Math.abs(boundaryDraft.x2 - boundaryDraft.x1), height: Math.abs(boundaryDraft.y2 - boundaryDraft.y1), kind: $("#boundaryKind").value }, true);
   if (freehandDraft?.length > 1) drawBoundary({ type: "polygon", points: freehandDraft, kind: $("#boundaryKind").value }, true);
   drawPolylineDraft();
-  if (roomDraft?.length > 1) { ctx.save(); ctx.strokeStyle = "#276749"; ctx.lineWidth = 3 / zoomLevel; ctx.setLineDash([8 / zoomLevel, 5 / zoomLevel]); traceSmooth(roomDraft); ctx.stroke(); ctx.restore(); }
+  if (roomDraft?.length > 1) { ctx.save(); ctx.strokeStyle = "#276749"; ctx.lineWidth = 3 / zoomLevel; ctx.setLineDash([8 / zoomLevel, 5 / zoomLevel]); tracePolygon(roomDraft, false); ctx.stroke(); ctx.restore(); }
   if (arrowDraft) drawAnnotation(arrowDraft, true);
 }
 
@@ -1447,12 +1620,14 @@ function settingsSnapshot() {
 
 function projectSnapshot() {
   return {
-    schema: "testfit-bubbles", version: 5, exportedAt: new Date().toISOString(),
+    schema: "testfit-bubbles", version: 6, exportedAt: new Date().toISOString(),
     nodes: nodes.map(node => ({
       id: node.id, name: node.name, area: node.area, x: node.x, y: node.y,
       vx: 0, vy: 0, pinned: node.pinned, color: node.color, weight: node.weight,
       foam: node.foam, squeeze: node.squeeze, separation: node.separation, mobility: node.mobility,
       shape: node.shape, customPoints: node.customPoints, boundaryId: node.boundaryId,
+      rotation: node.rotation, rectWidth: node.rectWidth, rectHeight: node.rectHeight,
+      snapToBoundary: node.snapToBoundary, snapDistance: node.snapDistance,
       sketch: node.sketch, style: node.style
     })),
     edges: clone(edges), boundaries: clone(boundaries), annotations: clone(annotations),
@@ -1484,6 +1659,7 @@ function loadProject(data) {
   const legacyEdgeColor = /^#[0-9a-f]{6}$/i.test(data.settings?.connectionColor) ? data.settings.connectionColor : "#276749";
   nodes = data.nodes.map((saved, index) => {
     const area = Math.max(1, Math.round(Number(saved.area) || 1));
+    const rectangle = rectangleDimensionsForArea(area);
     return {
       id: Number(saved.id) || index + 1, name: String(saved.name || `Space ${index + 1}`).slice(0, 28), area, r: radius(area),
       x: finiteOr(saved.x, w / 2), y: finiteOr(saved.y, h / 2), vx: 0, vy: 0,
@@ -1493,7 +1669,10 @@ function loadProject(data) {
       mobility: clamp(finiteOr(saved.mobility, 1), 0, 1), effectiveArea: area,
       sketch: { ...randomSketch(), ...(saved.sketch || {}) }, shape: ["circle", "rect", "lshape", "custom"].includes(saved.shape) ? saved.shape : "circle",
       customPoints: Array.isArray(saved.customPoints) ? saved.customPoints.map(point => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 })) : null,
-      boundaryId: saved.boundaryId == null ? null : Number(saved.boundaryId), style: { ...DEFAULT_STYLE, ...(saved.style || {}) }
+      boundaryId: saved.boundaryId == null ? null : Number(saved.boundaryId), style: { ...DEFAULT_STYLE, ...(saved.style || {}) },
+      rotation: normalizedRotation(finiteOr(saved.rotation, 0)),
+      rectWidth: Math.max(.1, finiteOr(saved.rectWidth, rectangle.width)), rectHeight: Math.max(.1, finiteOr(saved.rectHeight, rectangle.height)),
+      snapToBoundary: !!saved.snapToBoundary, snapDistance: clamp(finiteOr(saved.snapDistance, 5), .1, 100)
     };
   });
   const ids = new Set(nodes.map(node => node.id));
@@ -1965,16 +2144,98 @@ $("#drawArrow").onclick = () => setTool("annotation-arrow");
 $("#connectSpaces").onclick = () => setTool("connect");
 $("#sketchRoom").onclick = () => selectedNode() ? setTool("room-custom") : status.textContent = "Select a space before sketching its room shape.";
 $("#clearAnnotations").onclick = () => { annotations = []; renderAnnotations(); status.textContent = "All annotations cleared."; };
-$("#contain").onchange = () => nodes.forEach(node => constrain(node, false));
+$("#contain").onchange = () => nodes.forEach(node => { constrain(node, false); snapRectangleToBoundary(node); });
 
 $("#roomShape").onchange = event => {
   const node = selectedNode();
   if (!node) return;
   if (event.target.value === "custom" && !node.customPoints) { setTool("room-custom"); return; }
   node.shape = event.target.value;
+  if (node.shape === "rect") ensureRectangleDimensions(node);
   node.profile = null;
+  constrain(node, false);
+  snapRectangleToBoundary(node);
+  syncInspector();
   status.textContent = `${node.name} changed to ${event.target.options[event.target.selectedIndex].text.toLowerCase()}.`;
 };
+
+function setShapeRotation(value) {
+  const node = selectedNode();
+  if (!node || node.shape === "circle") return;
+  node.rotation = normalizedRotation(value);
+  node.profile = null;
+  constrain(node, false);
+  snapRectangleToBoundary(node);
+  $("#shapeRotation").value = node.rotation;
+  $("#shapeRotationNumber").value = Math.round(node.rotation * 10) / 10;
+  status.textContent = `${node.name} rotated to ${Math.round(node.rotation * 10) / 10}°.`;
+}
+
+let geometryInputTimer = null;
+function queueSelectedGeometry(callback) {
+  const expectedSelection = selected;
+  clearTimeout(geometryInputTimer);
+  geometryInputTimer = setTimeout(() => {
+    geometryInputTimer = null;
+    if (selected === expectedSelection) callback();
+  }, 180);
+}
+function commitGeometryInput(callback) {
+  clearTimeout(geometryInputTimer);
+  geometryInputTimer = null;
+  callback();
+}
+
+$("#shapeRotation").oninput = event => setShapeRotation(event.target.value);
+$("#shapeRotationNumber").oninput = event => queueSelectedGeometry(() => setShapeRotation(event.target.value));
+$("#shapeRotationNumber").onchange = event => commitGeometryInput(() => setShapeRotation(event.target.value));
+
+function updateRectangleEdge(edge, value) {
+  const node = selectedNode(), feet = Number(value);
+  if (!node || node.shape !== "rect" || !Number.isFinite(feet) || feet <= 0) { if (node) syncInspector(); return; }
+  if (edge === "width") {
+    node.rectWidth = feet;
+    node.rectHeight = node.area / feet;
+  } else {
+    node.rectHeight = feet;
+    node.rectWidth = node.area / feet;
+  }
+  node.profile = null;
+  constrain(node, false);
+  snapRectangleToBoundary(node);
+  syncInspector();
+  status.textContent = `${node.name} is ${node.rectWidth.toFixed(2)}' × ${node.rectHeight.toFixed(2)}' while preserving ${node.area.toLocaleString()} sf.`;
+}
+
+function updateRectangleRatio(value) {
+  const node = selectedNode(), ratio = Number(value);
+  if (!node || node.shape !== "rect" || !Number.isFinite(ratio) || ratio < .05 || ratio > 20) { if (node) syncInspector(); return; }
+  const dimensions = rectangleDimensionsForArea(node.area, ratio);
+  node.rectWidth = dimensions.width; node.rectHeight = dimensions.height; node.profile = null;
+  constrain(node, false); snapRectangleToBoundary(node); syncInspector();
+  status.textContent = `${node.name} rectangle ratio changed to ${ratio.toFixed(2)}:1.`;
+}
+$("#rectWidth").oninput = event => queueSelectedGeometry(() => updateRectangleEdge("width", event.target.value));
+$("#rectWidth").onchange = event => commitGeometryInput(() => updateRectangleEdge("width", event.target.value));
+$("#rectHeight").oninput = event => queueSelectedGeometry(() => updateRectangleEdge("height", event.target.value));
+$("#rectHeight").onchange = event => commitGeometryInput(() => updateRectangleEdge("height", event.target.value));
+$("#rectRatio").oninput = event => queueSelectedGeometry(() => updateRectangleRatio(event.target.value));
+$("#rectRatio").onchange = event => commitGeometryInput(() => updateRectangleRatio(event.target.value));
+$("#rectSnap").onchange = event => {
+  const node = selectedNode(); if (!node) return;
+  node.snapToBoundary = event.target.checked;
+  if (node.snapToBoundary) snapRectangleToBoundary(node);
+  status.textContent = `${node.name} boundary snapping ${node.snapToBoundary ? "enabled" : "disabled"}.`;
+};
+function updateRectangleSnapDistance(value) {
+  const node = selectedNode(), distance = Number(value);
+  if (!node || !Number.isFinite(distance) || distance <= 0) { if (node) syncInspector(); return; }
+  node.snapDistance = clamp(distance, .1, 100);
+  snapRectangleToBoundary(node); syncInspector();
+  status.textContent = `${node.name} will snap within ${node.snapDistance.toFixed(1)} feet of a boundary edge.`;
+}
+$("#rectSnapDistance").oninput = event => queueSelectedGeometry(() => updateRectangleSnapDistance(event.target.value));
+$("#rectSnapDistance").onchange = event => commitGeometryInput(() => updateRectangleSnapDistance(event.target.value));
 $("#selectedAreaName").onchange = event => {
   const node = selectedNode(), name = event.target.value.trim();
   if (!node || !name) { if (node) event.target.value = node.name; return; }
@@ -1985,7 +2246,13 @@ $("#selectedAreaName").onchange = event => {
 $("#selectedAreaSize").onchange = event => {
   const node = selectedNode(), area = Math.round(+event.target.value);
   if (!node || !Number.isFinite(area) || area < 1) { if (node) event.target.value = node.area; return; }
+  const ratio = ensureRectangleDimensions(node).width / ensureRectangleDimensions(node).height;
   node.area = area; node.r = radius(area); node.effectiveArea = area; node.profile = null;
+  if (node.shape === "rect") {
+    const dimensions = rectangleDimensionsForArea(area, ratio);
+    node.rectWidth = dimensions.width; node.rectHeight = dimensions.height;
+  }
+  constrain(node, false); snapRectangleToBoundary(node);
   renderList(); syncInspector();
   status.textContent = `${node.name} updated to ${area.toLocaleString()} sf.`;
 };
@@ -1994,12 +2261,14 @@ $("#spaceBoundary").onchange = event => {
   if (!node) return;
   node.boundaryId = event.target.value ? +event.target.value : null;
   constrain(node, false);
+  snapRectangleToBoundary(node);
   status.textContent = node.boundaryId ? `${node.name} assigned to ${boundaries.find(boundary => boundary.id === node.boundaryId)?.name}.` : `${node.name} boundary assignment set to automatic.`;
 };
 for (const [selector, axis] of [["#coordX", "x"], ["#coordY", "y"]]) $(selector).onchange = event => {
   const node = selectedNode(), value = Number(event.target.value);
   if (!node || !Number.isFinite(value)) return;
   node[axis] = value; node.pinned = true; node.vx = node.vy = 0; constrain(node, false);
+  snapRectangleToBoundary(node);
   status.textContent = `${node.name} moved to (${Math.round(node.x)}, ${Math.round(node.y)}) and fixed.`;
   renderList(); syncInspector();
 };
@@ -2011,7 +2280,7 @@ $("#reflow").onclick = () => {
     if (node.pinned) return;
     const boundary = outerBoundaryFor(node), center = boundary ? boundaryCenter(boundary) : { x: cameraX, y: cameraY };
     node.x = center.x + Math.cos(index * 2.3) * 100; node.y = center.y + Math.sin(index * 2.3) * 100;
-    node.vx = node.vy = 0; constrain(node, false);
+    node.vx = node.vy = 0; constrain(node, false); snapRectangleToBoundary(node);
   });
   status.textContent = "Movable spaces reflowed; fixed spaces stayed in place.";
 };

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TestFit Bubbles</title>
-  <link rel="stylesheet" href="styles.css?v=20260831-pdf-scale">
+  <link rel="stylesheet" href="styles.css?v=20260831-rect-snap">
   <link rel="stylesheet" href="controls.css">
 </head>
 <body>
@@ -76,11 +76,27 @@
         <label class="select-label" for="roomShape">Room geometry</label>
         <select id="roomShape">
           <option value="circle">Circle</option>
-          <option value="rect">Filleted rectangle</option>
-          <option value="lshape">Filleted L-shape</option>
+          <option value="rect">Straight rectangle</option>
+          <option value="lshape">Straight L-shape</option>
           <option value="custom">Custom sketch</option>
         </select>
         <button id="sketchRoom" class="wide-button">Sketch custom room shape</button>
+        <label class="select-label spaced" for="shapeRotation">Rotation</label>
+        <div class="rotation-control">
+          <input id="shapeRotation" type="range" min="-180" max="180" step="1" value="0" aria-label="Shape rotation">
+          <label><input id="shapeRotationNumber" type="number" min="-180" max="180" step="1" value="0" aria-label="Shape rotation in degrees">°</label>
+        </div>
+        <div id="rectangleControls" class="property-subpanel rectangle-controls is-hidden">
+          <div class="subsection-heading">Rectangle dimensions</div>
+          <div class="property-grid">
+            <label>Width (ft)<input id="rectWidth" type="number" min="0.1" step="0.1"></label>
+            <label>Depth (ft)<input id="rectHeight" type="number" min="0.1" step="0.1"></label>
+            <label>Width : depth<input id="rectRatio" type="number" min="0.05" max="20" step="0.05"></label>
+            <label>Snap distance (ft)<input id="rectSnapDistance" type="number" min="0.1" max="100" step="0.5" value="5"></label>
+          </div>
+          <label class="check"><input id="rectSnap" type="checkbox"> Snap to the closest boundary edge</label>
+          <p class="helper-text">Changing one edge or the ratio preserves the programmed area. Snapping keeps the rectangle inside the nearest boundary.</p>
+        </div>
         <label class="select-label spaced" for="spaceBoundary">Assigned boundary</label>
         <select id="spaceBoundary"><option value="">Automatic</option></select>
         <div class="coordinate-grid">
@@ -188,6 +204,6 @@
     <a href="#spaceInspector">Properties</a>
     <a href="#toolsPanel">Tools</a>
   </nav>
-  <script src="script.js?v=20260831-pdf-scale"></script>
+  <script src="script.js?v=20260831-rect-snap"></script>
 </body>
 </html>
