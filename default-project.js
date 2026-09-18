@@ -1,6 +1,6 @@
-// Schematic transcription of the user's Photo 1.jpg, not a surveyed floor plan.
-// Positions follow the photo; all room areas remain preliminary estimates.
-// Do not fetch the private source photo or publish it with this preset.
+// Editable test-fit combining the floor-plan photo with the later measured shell sketch.
+// Coordinates are FEET, not photo pixels. Room areas remain preliminary estimates.
+// Do not include the private source photographs in the public site.
 window.TESTFIT_DEFAULT_PROJECT = (() => {
   const groups = {
     surgery: { name: "Operating rooms", color: "#e9a3bc" },
@@ -9,73 +9,92 @@ window.TESTFIT_DEFAULT_PROJECT = (() => {
     staff: { name: "Staff / changing", color: "#94b791" },
     admin: { name: "Reception / administration", color: "#edcc93" },
     public: { name: "Waiting / public", color: "#bba3ca" },
-    plant: { name: "Building services", color: "#c1c2cb" },
-    future: { name: "Available space", color: "#dddcd5" }
+    plant: { name: "Building services", color: "#c1c2cb" }
   };
-  // key, displayed name, sf, photo x, photo y, color group
-  const rooms = [
-    ["or4", "OR 4", 543, 475, 366, "surgery"],
-    ["or3", "OR 3", 590, 615, 369, "surgery"],
-    ["or2", "OR 2", 600, 762, 374, "surgery"],
-    ["or1", "OR 1", 468, 909, 380, "surgery"],
-    ["pacu1", "PACU 1", 90, 218, 320, "patient"],
-    ["pacu2", "PACU 2", 90, 218, 369, "patient"],
-    ["pacu3", "PACU 3", 90, 218, 420, "patient"],
-    ["pacu4", "PACU 4", 88, 218, 473, "patient"],
-    ["pacu5", "PACU 5", 88, 218, 526, "patient"],
-    ["pacu6", "PACU 6", 90, 218, 579, "patient"],
-    ["pacu7", "PACU 7", 90, 218, 632, "patient"],
-    ["pacu8", "PACU 8", 110, 325, 371, "patient"],
-    ["pacu9", "PACU 9", 140, 325, 322, "patient"],
-    ["preopB", "Pre-op bariatric", 78, 325, 660, "patient"],
-    ["preop1", "Pre-op 1", 90, 378, 660, "patient"],
-    ["preop2", "Pre-op 2", 90, 430, 660, "patient"],
-    ["preop3", "Pre-op 3", 90, 482, 660, "patient"],
-    ["preop4", "Pre-op 4", 90, 534, 660, "patient"],
-    ["preop5", "Pre-op 5", 90, 586, 660, "patient"],
-    ["preop6", "Pre-op 6", 90, 638, 660, "patient"],
-    ["decon", "Decontamination", 400, 726, 225, "support"],
-    ["assembly", "Clean assembly", 440, 849, 226, "support"],
-    ["sterile", "Sterile storage", 215, 968, 236, "support"],
-    ["receivingW", "Receiving west", 140, 373, 166, "support"],
-    ["biowaste", "Bio waste / soiled", 98, 432, 150, "support"],
-    ["general", "General storage", 102, 379, 228, "support"],
-    ["pacuTlt", "PACU toilet", 73, 228, 269, "support"],
-    ["soiledW", "Soiled utility west", 118, 381, 326, "support"],
-    ["cleanW", "Clean utility west", 86, 381, 393, "support"],
-    ["nurse", "Nurse station", 288, 332, 552, "support"],
-    ["supplies", "Supply storage", 84, 370, 495, "support"],
-    ["equipment", "Equipment storage", 287, 477, 496, "support"],
-    ["meds", "Meds", 65, 420, 564, "support"],
-    ["clean", "Clean utility", 85, 478, 564, "support"],
-    ["soiled", "Soiled utility", 88, 533, 564, "support"],
-    ["clinicalTlt", "Clinical toilet", 78, 582, 512, "support"],
-    ["preopTlt", "Pre-op toilet", 76, 690, 659, "support"],
-    ["wheelchair", "Wheelchair storage", 66, 207, 710, "support"],
-    ["receivingE", "Receiving east", 57, 977, 165, "support"],
-    ["sterileTlt", "Sterile-area toilet", 54, 948, 192, "support"],
-    ["lounge", "Staff lounge", 490, 1077, 322, "staff"],
-    ["lockerM", "Locker / toilet men", 224, 1077, 402, "staff"],
-    ["lockerW", "Locker / toilet women", 300, 1077, 465, "staff"],
-    ["reception", "Reception", 225, 784, 520, "admin"],
-    ["records", "Office / medical records", 100, 684, 501, "admin"],
-    ["consult", "Consult", 100, 684, 570, "admin"],
-    ["manager", "Nurse manager", 90, 588, 572, "admin"],
-    ["control", "Control", 30, 582, 470, "admin"],
-    ["waiting", "Waiting room", 329, 797, 623, "public"],
-    ["work", "Anesthesia work", 88, 864, 504, "public"],
-    ["publicTlt", "Public toilet", 58, 867, 664, "public"],
-    ["mech", "Mechanical / med gas", 362, 698, 143, "plant"],
-    ["emergency", "Emergency electrical", 202, 832, 137, "plant"],
-    ["electrical", "Electrical", 200, 914, 133, "plant"],
-    ["riser", "Riser / utility", 75, 971, 117, "plant"],
-    ["ro", "RO water", 126, 554, 232, "plant"],
-    ["building", "Building electrical", 100, 627, 191, "plant"],
-    ["boiler", "Boiler", 70, 611, 249, "plant"],
-    ["utility", "Utility", 81, 651, 252, "plant"],
-    ["future", "Available space", 1919, 1030, 605, "future"]
+  // key, name, estimated sf, group, left (ft), top (ft), width (ft).
+  // Depth = sf / width, keeping geometry, labels and scaled exports consistent.
+  const roomRows = [
+    ["or4", "OR 4", 543, "surgery", 44, 43.5, 24],
+    ["or3", "OR 3", 590, "surgery", 69, 43.5, 26],
+    ["or2", "OR 2", 600, "surgery", 96, 43.5, 25],
+    ["or1", "OR 1", 468, "surgery", 122, 43.5, 24],
+    ["pacu1", "PACU 1", 90, "patient", 2, 40, 10],
+    ["pacu2", "PACU 2", 90, "patient", 2, 49.8, 10],
+    ["pacu3", "PACU 3", 90, "patient", 2, 59.6, 10],
+    ["pacu4", "PACU 4", 88, "patient", 2, 69.4, 10],
+    ["pacu5", "PACU 5", 88, "patient", 2, 79.2, 10],
+    ["pacu6", "PACU 6", 90, "patient", 2, 89, 10],
+    ["pacu7", "PACU 7", 90, "patient", 2, 98.8, 10],
+    ["pacu8", "PACU 8", 110, "patient", 21, 53.5, 12],
+    ["pacu9", "PACU 9", 140, "patient", 21, 41, 12],
+    ["preopB", "Pre-op bariatric", 78, "patient", 22, 105, 8],
+    ["preop1", "Pre-op 1", 90, "patient", 30.8, 105, 9],
+    ["preop2", "Pre-op 2", 90, "patient", 40.6, 105, 9],
+    ["preop3", "Pre-op 3", 90, "patient", 50.4, 105, 9],
+    ["preop4", "Pre-op 4", 90, "patient", 60.2, 105, 9],
+    ["preop5", "Pre-op 5", 90, "patient", 70, 105, 9],
+    ["preop6", "Pre-op 6", 90, "patient", 79.8, 105, 9],
+    ["decon", "Decontamination", 400, "support", 92, 18, 19],
+    ["assembly", "Clean assembly", 440, "support", 112, 18, 20],
+    ["sterile", "Sterile storage", 215, "support", 133, 22, 13],
+    ["receivingW", "Receiving west", 140, "support", 30, 12, 12],
+    ["biowaste", "Bio waste / soiled", 98, "support", 43, 12, 9],
+    ["general", "General storage", 102, "support", 30, 25, 12],
+    ["pacuTlt", "PACU toilet", 73, "support", 2, 33.6, 11.6],
+    ["soiledW", "Soiled utility west", 118, "support", 34, 41, 8],
+    ["cleanW", "Clean utility west", 86, "support", 34, 56.75, 8],
+    ["nurse", "Nurse station", 288, "support", 22, 75, 21],
+    ["supplies", "Supply storage", 84, "support", 29, 75, 12],
+    ["equipment", "Equipment storage", 287, "support", 43, 75, 26],
+    ["meds", "Meds", 65, "support", 44, 88, 8],
+    ["clean", "Clean utility", 85, "support", 53, 88, 9],
+    ["soiled", "Soiled utility", 88, "support", 63, 88, 9],
+    ["clinicalTlt", "Clinical toilet", 78, "support", 72, 77, 9],
+    ["preopTlt", "Pre-op toilet", 76, "support", 90, 105, 7.6],
+    ["wheelchair", "Wheelchair storage", 66, "support", 2, 109, 11],
+    ["receivingE", "Receiving east", 57, "support", 143.4, 11, 6],
+    ["sterileTlt", "Sterile-area toilet", 54, "support", 138, 11, 5],
+    ["lounge", "Staff lounge", 490, "staff", 149, 32, 27],
+    ["lockerM", "Locker / toilet men", 224, "staff", 149, 33 + 490 / 27, 27],
+    ["lockerW", "Locker / toilet women", 300, "staff", 149, 34 + (490 + 224) / 27, 27],
+    ["reception", "Reception", 225, "admin", 99, 75, 25],
+    ["records", "Office / medical records", 100, "admin", 87, 75, 10],
+    ["consult", "Consult", 100, "admin", 87, 89, 10],
+    ["manager", "Nurse manager", 90, "admin", 73, 89, 9],
+    ["control", "Control", 30, "admin", 72, 72.5, 10],
+    ["waiting", "Waiting room", 329, "public", 103, 99, 23],
+    ["work", "Anesthesia work", 88, "public", 125, 75, 7.5],
+    ["publicTlt", "Public toilet", 58, "public", 125, 108, 7.5],
+    ["mech", "Mechanical / med gas", 362, "plant", 76, 6, 35],
+    ["emergency", "Emergency electrical", 202, "plant", 112, 1, 14],
+    ["electrical", "Electrical", 200, "plant", 126.5, -1.4, 11],
+    ["riser", "Riser / utility", 75, "plant", 139, 0, 8],
+    ["ro", "RO water", 126, "plant", 64, 30, 13],
+    ["building", "Building electrical", 100, "plant", 76, 18, 14],
+    ["boiler", "Boiler", 70, "plant", 78, 27, 6],
+    ["utility", "Utility", 81, "plant", 85, 26, 6]
   ];
-  // These are editable adjacency suggestions, not claimed clinical workflow.
+  const rooms = roomRows.map(([key, name, area, group, x, y, width]) => {
+    let height = area / width, points = null;
+    if (key === "or4" || key === "or1") {
+      // Clipped entry corners from the room-plan photograph, not rounded edges.
+      const clip = 3;
+      height = (area + clip * clip / 2) / width;
+      points = key === "or4"
+        ? [[x + clip, y], [x + width, y], [x + width, y + height], [x, y + height], [x, y + clip]]
+        : [[x, y], [x + width - clip, y], [x + width, y + clip], [x + width, y + height], [x, y + height]];
+    }
+    if (key === "nurse") {
+      height = (area + 15 * 12) / 21;
+      points = [[22,75],[28,75],[28,87],[43,87],[43,75 + height],[22,75 + height]];
+    }
+    if (key === "waiting") {
+      height = 16;
+      points = [[103,99],[126,99],[126,107.2],[121,107.2],[121,115],[103,115]];
+    }
+    return { key, name, area, group, x, y, width, height, points, shape: points ? "custom" : "rect" };
+  });
+  // Editable adjacency suggestions, not a clinical workflow specification.
   const links = [
     ["decon", "assembly"], ["assembly", "sterile"],
     ["receivingW", "general"], ["receivingW", "biowaste"], ["receivingE", "sterile"],
@@ -87,21 +106,37 @@ window.TESTFIT_DEFAULT_PROJECT = (() => {
     ["nurse", "supplies"], ["nurse", "equipment"], ["nurse", "meds"],
     ["nurse", "clean"], ["nurse", "soiled"], ["nurse", "manager"], ["nurse", "clinicalTlt"],
     ["nurse", "preopB"], ["pacu7", "wheelchair"], ["preop6", "preopTlt"],
-    ...Array.from({ length: 7 }, (_, i) => ["nurse", `pacu${i + 1}`]),
-    ...Array.from({ length: 6 }, (_, i) => ["nurse", `preop${i + 1}`])
+    ...Array.from({ length: 7 }, (_, i) => ["nurse", "pacu" + (i + 1)]),
+    ...Array.from({ length: 6 }, (_, i) => ["nurse", "preop" + (i + 1)])
   ];
+  const overallWidth = 177, leftDepth = 85.5, bottom = 116;
+  const ledgeY = bottom - leftDepth, leftLedge = 24.5, rightLedge = 24;
+  const leftRise = 19 + 8 / 12, rightRise = 35 + 4 / 12, topLength = 123 + 8 / 12;
+  const tilt = 7 * Math.PI / 180; // Handwritten shoulder angles: 83° / 97°.
+  const upperLeft = [3 + leftLedge - leftRise * Math.sin(tilt), ledgeY - leftRise * Math.cos(tilt)];
+  const topDy = -(rightRise - leftRise) * Math.cos(tilt);
+  const upperRight = [upperLeft[0] + Math.sqrt(topLength * topLength - topDy * topDy), upperLeft[1] + topDy];
+  const rightShoulder = [upperRight[0] + rightRise * Math.sin(tilt), ledgeY];
+  const notchY = ledgeY + 42;
+  // Infer notch width from the excluded 1,919 sf label + 42' return.
+  // End jogs are approximate: handwritten dimensions do not make a closed survey.
+  const notchX = overallWidth - 1919 / (bottom - notchY);
+  const outline = [[0,bottom],[0,33.5],[3,33.5],[3,ledgeY],[3 + leftLedge,ledgeY],
+    upperLeft, upperRight, rightShoulder, [rightShoulder[0] + rightLedge,ledgeY],
+    [rightShoulder[0] + rightLedge,32],[overallWidth,32],[overallWidth,notchY],
+    [notchX,notchY],[notchX,bottom]];
   return {
-    title: "Surgical center · photo study",
-    source: "Photo 1.jpg supplied by the user",
-    note: "Schematic from your photo. Areas, minor-room names, outline and relationships are preliminary; verify against the original drawing. Uncolored corridors are left as circulation space.",
-    groups, rooms, links,
-    // Trace the main occupied footprint, excluding the stair and outer access routes.
-    outline: [[175,245],[333,245],[333,128],[515,128],[515,103],[1005,103],[1005,273],[1150,273],[1150,720],[175,720]],
+    title: "Surgical center · site-fit study",
+    source: "User-supplied floor-plan photograph and measured site sketch",
+    note: "Shell follows the 177′ overall width, 85′-6″ left depth and angled top in your sketch. The hatched 1,919 sf corner is outside the boundary, not a room. Small shell jogs and the notch width are inferred; room dimensions, areas and relationships remain schematic, not surveyed.",
+    units: "feet", groups, rooms, links, outline,
+    dimensions: { overallWidth, leftDepth, leftLedge, rightLedge, leftRise, rightRise, topLength, rightReturn: 42 },
+    excludedCorner: { x: notchX, y: notchY, width: overallWidth - notchX, height: bottom - notchY, area: 1919 },
     entries: [
-      { start: [738,753], end: [738,710], color: "#84629c" },
-      { start: [173,687], end: [122,687], color: "#4c8ba4" },
-      { start: [365,92], end: [365,130], color: "#6d8757" },
-      { start: [1190,298], end: [1138,298], color: "#638466" }
+      { start: [100,122], end: [100,114], color: "#84629c" },
+      { start: [1,107], end: [-7,107], color: "#4c8ba4" },
+      { start: [35,5], end: [35,12], color: "#6d8757" },
+      { start: [184,35], end: [175,35], color: "#638466" }
     ]
   };
 })();

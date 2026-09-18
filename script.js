@@ -162,19 +162,25 @@ function loadPhotoDefault() {
   nextNodeId = nextBoundaryId = nextAnnotationId = 1;
   clearTool(true);
   selected = linkStart = drag = pan = null;
-  const position = (x, y) => ({ x: (x - 170) * .7 + 40, y: (y - 85) * .7 + 45 });
-  applySettings({ showAnchor: false, margin: 4, connectionStyle: "dotted", lineWeight: 1 });
+  const position = (x, y) => ({ x: x * AREA_SCALE + 40, y: y * AREA_SCALE + 40 });
+  applySettings({ showAnchor: false, margin: 0, connectionStyle: "dotted", lineWeight: 1 });
   projectInfo = { title: preset.title, source: preset.source, note: preset.note, preset: "photo-surgical-center" };
-  nodes = preset.rooms.map(([key, name, area, x, y, group], index) => ({
-    ...createNode(name, area, index), ...position(x, y),
-    presetKey: key, group: preset.groups[group].name, areaEstimated: true,
-    sourceNote: "Preliminary area and room name transcribed or estimated from Photo 1.jpg. Verify against the original plan.",
-    pinned: true, foam: false, weight: 1, color: preset.groups[group].color,
-    style: { fill: "solid", outline: "solid", pattern: group === "future" ? "parallel" : "none", sketch: false, misregister: false }
-  }));
+  nodes = preset.rooms.map((room, index) => {
+    const node = createNode(room.name, room.area, index);
+    const custom = room.points ? normalizeCustomPoints(room.points.map(point => position(...point)), node.r) : null;
+    return {
+      ...node, ...(custom?.center || position(room.x + room.width / 2, room.y + room.height / 2)),
+      shape: room.shape, rectWidth: room.width, rectHeight: room.height,
+      customPoints: custom?.points || null,
+      presetKey: room.key, group: preset.groups[room.group].name, areaEstimated: true,
+      sourceNote: "Estimated room area from the floor-plan photo. Shape and proportions follow that plan within the measured site sketch; verify room dimensions before design use.",
+      pinned: true, foam: false, weight: 1, color: preset.groups[room.group].color,
+      style: { fill: "solid", outline: "solid", pattern: "none", sketch: false, misregister: false }
+    };
+  });
   const byKey = new Map(nodes.map(node => [node.presetKey, node]));
   edges = preset.links.map(([a, b]) => ({ a: byKey.get(a).id, b: byKey.get(b).id, pull: 0, style: "dotted", width: 1, color: "#96a59c" }));
-  boundaries = [{ id: nextBoundaryId++, name: "Photo footprint · approximate", kind: "outer", color: "#849487", visible: true, type: "polygon", points: preset.outline.map(([x, y]) => position(x, y)), labelAtTop: true }];
+  boundaries = [{ id: nextBoundaryId++, name: "Site footprint · 177′ overall", kind: "outer", color: "#849487", visible: true, type: "polygon", points: preset.outline.map(([x, y]) => position(x, y)), labelAtTop: true }];
   annotations = preset.entries.map(entry => {
     const start = position(...entry.start), end = position(...entry.end);
     return { id: nextAnnotationId++, type: "arrow", x1: start.x, y1: start.y, x2: end.x, y2: end.y, color: entry.color, width: 2, lineStyle: "solid", headStyle: "filled", doubleHead: false };
@@ -182,7 +188,7 @@ function loadPhotoDefault() {
   selected = byKey.get("or4").id;
   renderAllControls();
   fitDiagram();
-  status.textContent = `${nodes.length} photo-mapped spaces · estimated areas · fixed layout. Select a space to edit; release it to move.`;
+  status.textContent = `${nodes.length} site-fitted rooms · hatched corner excluded · estimated room areas. Select a room to edit; release it to move.`;
 }
 
 function updatePhotoPanel() {
@@ -191,6 +197,7 @@ function updatePhotoPanel() {
   panel.classList.toggle("is-hidden", projectInfo?.preset !== "photo-surgical-center");
   const count = pattern => nodes.filter(node => pattern.test(node.presetKey || "")).length;
   $("#presetSummary").textContent = `${nodes.length} editable spaces · ${count(/^or[1-4]$/)} operating rooms · ${count(/^pacu\d$/)} PACU bays · ${count(/^preop(\d|B)$/)} pre-op bays`;
+  $("#siteSourceNote").textContent = projectInfo?.note || "";
   const legend = $("#programLegend");
   legend.replaceChildren();
   for (const group of Object.values(window.TESTFIT_DEFAULT_PROJECT?.groups || {})) {
@@ -1525,7 +1532,9 @@ function contrastColor(hex) {
 
 function photoBubbleLabel(node) {
   // Compact centered labels keep the many small rooms from overlapping neighbors.
-  const width = node.r * 1.65;
+  const polygon = rotatedBasePolygon(node);
+  const width = polygon ? Math.min(rayPolygonDistance(polygon, 0), rayPolygonDistance(polygon, Math.PI)) * 1.65 : node.r * 1.65;
+  const height = polygon ? Math.min(rayPolygonDistance(polygon, Math.PI / 2), rayPolygonDistance(polygon, -Math.PI / 2)) * 1.6 : node.r * 1.45;
   let fontSize = Math.min(12, Math.max(5, node.r * .37));
   ctx.font = `600 ${fontSize}px system-ui`;
   const words = node.name.split(/\s+/), lines = [];
@@ -1538,7 +1547,7 @@ function photoBubbleLabel(node) {
   if (line) lines.push(line);
   const longest = Math.max(...lines.map(text => ctx.measureText(text).width));
   if (longest > width) fontSize *= width / longest;
-  fontSize = Math.min(fontSize, node.r * 1.45 / (lines.length * 1.15 + 1.6));
+  fontSize = Math.min(fontSize, height / (lines.length * 1.15 + 1.6));
   const step = fontSize * 1.17;
   const top = node.y - (lines.length * step + fontSize) / 2 + step / 2;
   return {
@@ -1563,7 +1572,7 @@ function drawBubble(node) {
   }
   const outlineColor = node.style.fill === "blueprint" ? "#d9f1ff" : node.style.fill === "outline" ? node.color : "#171717";
   const selectedOutline = node.snappedBoundaryId ? "#1f8a57" : "#17221d";
-  strokeBubbleOutline(node, points, selected === node.id ? selectedOutline : outlineColor, (selected === node.id ? 5 : 3) / zoomLevel);
+  strokeBubbleOutline(node, points, selected === node.id ? selectedOutline : outlineColor, (selected === node.id ? (node.sourceNote ? 2.5 : 5) : (node.sourceNote ? 1.25 : 3)) / zoomLevel);
   if (activeTool === "connect" && linkStart === node.id) {
     ctx.save(); ctx.strokeStyle = "#1f8a57"; ctx.lineWidth = 7 / zoomLevel; ctx.setLineDash([4 / zoomLevel, 4 / zoomLevel]); traceNodeShape(node, points); ctx.stroke(); ctx.restore();
   }

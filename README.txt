@@ -1,13 +1,23 @@
 TESTFIT BUBBLES
 
-DEFAULT PHOTO LAYOUT (September 18, 2026)
-The main page now starts with a schematic surgical-center bubble diagram mapped
-from the user's Photo 1.jpg: 60 spaces, including 4 operating rooms, 9 PACU bays,
-and 7 pre-op bays. Colors and approximate locations follow the reference photo.
-Areas and unclear labels are preliminary estimates, marked with an asterisk in
-the diagram and exports and explained in the selected-space properties. This
-is a program study, not a dimensionally traced floor plan. The source photo is
-not included in the website. Preset data lives in default-project.js.
+DEFAULT SITE-FIT LAYOUT (September 18, 2026)
+The default combines the earlier surgical floor-plan photo with the user's
+later dimensioned site sketch: 59 rooms, including 4 operating rooms, 9 PACU
+bays, and 7 pre-op bays. There are 55 rectangles and 4 straight custom polygons
+(two clipped OR corners, the L-shaped nurse station and the waiting room).
+The former 1,919 sf Available space is removed. That corner is outside the
+concave outer boundary, not a room or a fill covering the usable floor plate.
+
+The shell and rooms now share one feet-based scale. The shell uses 177' overall,
+85'-6" left depth, 24'-6" and 24' shoulders, 19'-8" and 35'-4" upper returns,
+123'-8" angled top, and the 42' right return read from the sketch. Minor jogs
+remain approximate; notch width is inferred from the excluded 1,919 sf and
+the right return. These handwritten dimensions are not a fully closed survey.
+Room areas are unchanged estimates from the earlier photo: 9,845 sf total.
+Rectangle depth and custom polygon geometry preserve those programmed areas.
+Room proportions and positions are a schematic fit, not a surveyed trace or
+code-compliant design. Asterisks flag estimated areas in the diagram and exports.
+Neither private source photo is published. Data lives in default-project.js.
 
 The photo arrangement starts fixed. Release a selected room or use Release all
 spaces to explore. Existing adjacency links start with 0% pull. Restore photo
@@ -32,7 +42,7 @@ form, a height-limited scrolling list of all areas, and a larger scrolling
 property panel for the selected area. Select a space in the list or diagram. The
 Selected area properties panel
 can edit its name and programmed area, then change its geometry to a circle,
-filleted rectangle, filleted L-shape, or a custom hand-sketched outline. A space
+straight rectangle, straight L-shape, or a custom hand-sketched outline. A space
 can use Automatic boundary selection or be assigned to a specific outer boundary.
 
 Fix location pins the space so physics cannot move it. Double-clicking the
