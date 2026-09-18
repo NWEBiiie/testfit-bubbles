@@ -94,6 +94,11 @@ form button { grid-column: 1 / -1; }
 .rectangle-controls { margin-top: 12px; }
 .rectangle-controls .property-grid { grid-template-columns: 1fr 1fr; }
 .helper-text { margin: 8px 0 0; color: #6b776f; font-size: .68rem; line-height: 1.4; }
+.source-note { margin: 0 0 14px; padding: 9px; border-left: 3px solid #c59b56; background: #fff8eb; font-size: .72rem; line-height: 1.45; }
+.program-legend { display: grid; gap: 7px; margin: 14px 0; font-size: .72rem; }
+.program-legend div { display: flex; align-items: center; gap: 8px; }
+.program-legend i { flex: 0 0 13px; height: 13px; border-radius: 50%; border: 1px solid #17221d30; }
+.space-tooltip { position: absolute; z-index: 6; pointer-events: none; max-width: 235px; padding: 9px 12px; background: #fff; border: 1px solid #bfcfc4; border-radius: 8px; box-shadow: 0 4px 14px #17221d20; font-size: .75rem; line-height: 1.5; white-space: pre-line; }
 .subsection-heading { margin: 18px 0 10px; padding-top: 14px; border-top: 1px solid var(--line); color: #34423b; font-size: .72rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .property-subpanel { margin-top: 20px; padding: 0 12px 12px; border: 1px solid #d8e1db; border-radius: 10px; background: #f8faf8; }
 .property-subpanel > .subsection-heading:first-child { margin-top: 0; border-top: 0; }
@@ -151,7 +156,7 @@ article { min-width: 0; min-height: 0; height: 100%; display: grid; grid-templat
 canvas { display: block; width: 100%; height: 100%; min-height: 0; cursor: grab; touch-action: none; }
 canvas.dragging { cursor: grabbing; }
 canvas.drawing { cursor: crosshair; }
-.zoom-overlay { position: absolute; z-index: 5; right: 16px; bottom: 16px; display: grid; grid-template-columns: 34px 118px 34px auto; gap: 6px; align-items: center; padding: 7px; border: 1px solid #cbd3cd; border-radius: 10px; background: #fffffff2; box-shadow: 0 4px 16px #17221d25; backdrop-filter: blur(8px); }
+.zoom-overlay { position: absolute; z-index: 5; right: 16px; bottom: 16px; display: grid; grid-template-columns: 34px minmax(50px, 118px) 34px auto auto; gap: 6px; align-items: center; padding: 7px; border: 1px solid #cbd3cd; border-radius: 10px; background: #fffffff2; box-shadow: 0 4px 16px #17221d25; backdrop-filter: blur(8px); }
 .zoom-overlay button { height: 32px; padding: 4px 8px; }
 .zoom-overlay input[type="range"] { width: 118px; height: 28px; }
 .zoom-overlay .zoom-readout { min-width: 54px; color: #46534c; font-size: .7rem; font-variant-numeric: tabular-nums; }
@@ -182,7 +187,7 @@ canvas.drawing { cursor: crosshair; }
   #list { max-height: 176px; gap: 4px; }
   .item { min-height: 44px; padding: 5px 4px; }
   .properties-panel { max-height: none; overflow: visible; }
-  .sticky-title { top: 0; }
+  .sticky-title { top: 0; margin-inline: -16px; padding-inline: 16px; }
   .selected-connections { max-height: none; overflow: visible; }
   .right-sidebar { order: 3; width: 100%; height: auto; display: block; padding: 20px 16px; overflow: visible; scroll-margin-top: 8px; }
   .right-sidebar section + section { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
@@ -201,8 +206,8 @@ canvas.drawing { cursor: crosshair; }
   h1 { font-size: 1.65rem; }
   small { font-size: .62rem; }
   article { height: 60svh; min-height: 400px; }
-  .zoom-overlay { right: 10px; bottom: 10px; grid-template-columns: 34px 86px 34px auto; }
-  .zoom-overlay input[type="range"] { width: 86px; }
+  .zoom-overlay { right: 10px; bottom: 10px; grid-template-columns: 30px minmax(45px, 65px) 30px auto auto; max-width: calc(100% - 20px); gap: 4px; }
+  .zoom-overlay input[type="range"] { width: 100%; }
   .property-grid, .coordinate-grid { grid-template-columns: 1fr; }
   .rectangle-controls .property-grid { grid-template-columns: 1fr 1fr; }
   .connection-property { grid-template-columns: minmax(0, 1fr) 70px; }

@@ -4,14 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TestFit Bubbles</title>
-  <link rel="stylesheet" href="styles.css?v=20260831-rect-snap">
+  <link rel="stylesheet" href="styles.css?v=20260918-photo-plan">
   <link rel="stylesheet" href="controls.css">
 </head>
 <body>
   <header>
     <div><small>EARLY SPACE PLANNING</small><h1>TestFit Bubbles</h1></div>
     <div class="actions" aria-label="Project and export actions">
-      <button id="reset">Reset</button>
+      <button id="reset" title="Restore the room arrangement from your photo">Restore photo layout</button>
+      <button id="blankProject">New blank</button>
       <button id="exportProject">Save project</button>
       <button id="importProject">Open project</button>
       <input id="projectFile" type="file" accept=".json,.testfit.json,application/json" hidden>
@@ -73,6 +74,7 @@
           <label>Area name<input id="selectedAreaName" maxlength="28"></label>
           <label>Program area (sf)<input id="selectedAreaSize" type="number" min="1" step="1"></label>
         </div>
+        <p id="spaceSourceNote" class="source-note is-hidden"></p>
         <label class="select-label" for="roomShape">Room geometry</label>
         <select id="roomShape">
           <option value="circle">Circle</option>
@@ -95,7 +97,7 @@
             <label>Snap distance (ft)<input id="rectSnapDistance" type="number" min="0.1" max="100" step="0.5" value="5"></label>
           </div>
           <label class="check"><input id="rectSnap" type="checkbox"> Snap to the closest boundary edge</label>
-          <p class="helper-text">Changing one edge or the ratio preserves the programmed area. Snapping keeps the rectangle inside the nearest boundary.</p>
+          <p class="helper-text">Changing one edge or the ratio preserves the programmed area. Snapping keeps this straight-edged rectangle inside and rotates its nearest edge parallel to the boundary.</p>
         </div>
         <label class="select-label spaced" for="spaceBoundary">Assigned boundary</label>
         <select id="spaceBoundary"><option value="">Automatic</option></select>
@@ -149,16 +151,26 @@
       <div class="bar"><span id="status" aria-live="polite">Ready.</span><button id="reflow">Reflow movable spaces</button></div>
       <div class="canvas-shell">
         <canvas id="diagram" aria-label="Interactive architectural bubble diagram"></canvas>
+        <div id="spaceTooltip" class="space-tooltip" hidden></div>
         <div class="zoom-overlay" aria-label="Diagram zoom controls">
           <button id="zoomOut" aria-label="Zoom out">−</button>
-          <input id="zoom" type="range" min="50" max="250" step="10" value="100" aria-label="Zoom level">
+          <input id="zoom" type="range" min="20" max="400" step="5" value="100" aria-label="Zoom level">
           <button id="zoomIn" aria-label="Zoom in">+</button>
           <button id="zoomReset" class="zoom-readout" aria-label="Reset zoom"><output id="zoomValue">100%</output></button>
+          <button id="fitDiagram" aria-label="Fit whole diagram">Fit</button>
         </div>
       </div>
     </article>
 
     <aside id="toolsPanel" class="right-sidebar">
+      <section id="photoPresetPanel">
+        <h2>Surgical center</h2>
+        <p id="presetSummary"></p>
+        <div id="programLegend" class="program-legend" aria-label="Photo room color legend"></div>
+        <p class="hint">* = estimated area from your photo. Unclear names and connections are preliminary. Select any space to review it.</p>
+        <button id="releaseLayout" class="wide-button">Release all spaces</button>
+        <p class="hint">Starts fixed to preserve the photo layout. Release to drag and explore. Zoom in for the smaller rooms.</p>
+      </section>
       <section>
         <div class="section-title"><h2>Boundaries</h2><output id="boundaryCount">0</output></div>
         <label class="select-label" for="boundaryKind">New boundary type</label>
@@ -204,6 +216,7 @@
     <a href="#spaceInspector">Properties</a>
     <a href="#toolsPanel">Tools</a>
   </nav>
-  <script src="script.js?v=20260831-rect-snap"></script>
+  <script src="default-project.js?v=20260918-photo-plan"></script>
+  <script src="script.js?v=20260918-photo-plan"></script>
 </body>
 </html>

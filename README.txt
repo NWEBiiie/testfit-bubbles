@@ -1,5 +1,21 @@
 TESTFIT BUBBLES
 
+DEFAULT PHOTO LAYOUT (September 18, 2026)
+The main page now starts with a schematic surgical-center bubble diagram mapped
+from the user's Photo 1.jpg: 60 spaces, including 4 operating rooms, 9 PACU bays,
+and 7 pre-op bays. Colors and approximate locations follow the reference photo.
+Areas and unclear labels are preliminary estimates, marked with an asterisk in
+the diagram and exports and explained in the selected-space properties. This
+is a program study, not a dimensionally traced floor plan. The source photo is
+not included in the website. Preset data lives in default-project.js.
+
+The photo arrangement starts fixed. Release a selected room or use Release all
+spaces to explore. Existing adjacency links start with 0% pull. Restore photo
+layout reloads the preset; New blank starts an empty project. Fit shows the
+complete layout; zoom in or hover for small-room details. Save/Open project
+preserves the source notes, estimated-area markers, and group names.
+
+
 Double-click index.html to run the tool locally. No installation or internet
 connection is needed.
 

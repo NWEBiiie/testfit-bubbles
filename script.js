@@ -47,6 +47,8 @@ let zoomLevel = 1;
 let cameraX = 450;
 let cameraY = 300;
 let defaultStyle = { ...DEFAULT_STYLE };
+let projectInfo = null;
+let keepDiagramFitted = false;
 
 const radius = area => Math.sqrt(area / Math.PI) * AREA_SCALE;
 const foamAmount = node => node.foam === false ? 0 : clamp(Number(node.squeeze) || 0, 0, 1);
@@ -104,6 +106,11 @@ function createNode(name, area, index = nodes.length) {
 }
 
 function reset() {
+  if (!HISTORICAL_VARIANT && window.TESTFIT_DEFAULT_PROJECT) {
+    loadPhotoDefault();
+    return;
+  }
+  projectInfo = null;
   nextNodeId = 1;
   nextBoundaryId = 1;
   nextAnnotationId = 1;
@@ -150,6 +157,58 @@ function reset() {
   renderAllControls();
 }
 
+function loadPhotoDefault() {
+  const preset = window.TESTFIT_DEFAULT_PROJECT;
+  nextNodeId = nextBoundaryId = nextAnnotationId = 1;
+  clearTool(true);
+  selected = linkStart = drag = pan = null;
+  const position = (x, y) => ({ x: (x - 170) * .7 + 40, y: (y - 85) * .7 + 45 });
+  applySettings({ showAnchor: false, margin: 4, connectionStyle: "dotted", lineWeight: 1 });
+  projectInfo = { title: preset.title, source: preset.source, note: preset.note, preset: "photo-surgical-center" };
+  nodes = preset.rooms.map(([key, name, area, x, y, group], index) => ({
+    ...createNode(name, area, index), ...position(x, y),
+    presetKey: key, group: preset.groups[group].name, areaEstimated: true,
+    sourceNote: "Preliminary area and room name transcribed or estimated from Photo 1.jpg. Verify against the original plan.",
+    pinned: true, foam: false, weight: 1, color: preset.groups[group].color,
+    style: { fill: "solid", outline: "solid", pattern: group === "future" ? "parallel" : "none", sketch: false, misregister: false }
+  }));
+  const byKey = new Map(nodes.map(node => [node.presetKey, node]));
+  edges = preset.links.map(([a, b]) => ({ a: byKey.get(a).id, b: byKey.get(b).id, pull: 0, style: "dotted", width: 1, color: "#96a59c" }));
+  boundaries = [{ id: nextBoundaryId++, name: "Photo footprint · approximate", kind: "outer", color: "#849487", visible: true, type: "polygon", points: preset.outline.map(([x, y]) => position(x, y)), labelAtTop: true }];
+  annotations = preset.entries.map(entry => {
+    const start = position(...entry.start), end = position(...entry.end);
+    return { id: nextAnnotationId++, type: "arrow", x1: start.x, y1: start.y, x2: end.x, y2: end.y, color: entry.color, width: 2, lineStyle: "solid", headStyle: "filled", doubleHead: false };
+  });
+  selected = byKey.get("or4").id;
+  renderAllControls();
+  fitDiagram();
+  status.textContent = `${nodes.length} photo-mapped spaces · estimated areas · fixed layout. Select a space to edit; release it to move.`;
+}
+
+function updatePhotoPanel() {
+  const panel = $("#photoPresetPanel");
+  if (!panel) return;
+  panel.classList.toggle("is-hidden", projectInfo?.preset !== "photo-surgical-center");
+  const count = pattern => nodes.filter(node => pattern.test(node.presetKey || "")).length;
+  $("#presetSummary").textContent = `${nodes.length} editable spaces · ${count(/^or[1-4]$/)} operating rooms · ${count(/^pacu\d$/)} PACU bays · ${count(/^preop(\d|B)$/)} pre-op bays`;
+  const legend = $("#programLegend");
+  legend.replaceChildren();
+  for (const group of Object.values(window.TESTFIT_DEFAULT_PROJECT?.groups || {})) {
+    const row = document.createElement("div"), swatch = document.createElement("i"), label = document.createElement("span");
+    swatch.style.background = group.color;
+    label.textContent = group.name;
+    row.append(swatch, label); legend.append(row);
+  }
+}
+
+function fitDiagram() {
+  const bounds = diagramExportBounds();
+  setZoom(Math.min((w - 40) / bounds.width, (h - 100) / bounds.height));
+  cameraX = bounds.x + bounds.width / 2;
+  cameraY = bounds.y + bounds.height / 2 + 15 / zoomLevel;
+  keepDiagramFitted = true;
+}
+
 function resize() {
   const rect = canvas.getBoundingClientRect();
   const dpr = devicePixelRatio || 1;
@@ -161,6 +220,7 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (!Number.isFinite(cameraX)) cameraX = w / 2;
   if (!Number.isFinite(cameraY)) cameraY = h / 2;
+  if (keepDiagramFitted && nodes.length) fitDiagram();
 }
 
 function renderAllControls() {
@@ -184,6 +244,7 @@ function renderList() {
     choose.onclick = () => activeTool === "connect" ? handleConnectionChoice(node.id) : selectNode(node.id);
     node.areaEl = row.querySelector(".sf");
     node.areaEl.textContent = node.area.toLocaleString() + " sf";
+    if (node.areaEstimated) node.areaEl.textContent += " est.";
     const lock = row.querySelector(".lock-indicator");
     lock.textContent = node.pinned ? "◆" : "";
     lock.title = node.pinned ? "Fixed location" : "Movable";
@@ -191,6 +252,7 @@ function renderList() {
     list.append(row);
   }
   $("#total").textContent = nodes.reduce((sum, node) => sum + node.area, 0).toLocaleString() + " sf";
+  updatePhotoPanel();
 }
 
 function renderBoundaries() {
@@ -284,7 +346,7 @@ function removeNode(id) {
 function togglePin(node) {
   node.pinned = !node.pinned;
   node.vx = node.vy = 0;
-  status.textContent = `${node.name} ${node.pinned ? "fixed at its current coordinates" : "released to physics"}.`;
+  status.textContent = `${node.name} ${node.pinned ? "fully locked at its current coordinates" : "released for dragging and physics"}.`;
   renderList();
   syncInspector();
 }
@@ -296,6 +358,11 @@ function syncInspector() {
   $("#selectedName").textContent = node.name;
   $("#selectedAreaName").value = node.name;
   $("#selectedAreaSize").value = node.area;
+  const sourceNote = $("#spaceSourceNote");
+  if (sourceNote) {
+    sourceNote.classList.toggle("is-hidden", !node.sourceNote);
+    sourceNote.textContent = node.sourceNote ? `${node.group ? node.group + ". " : ""}${node.areaEstimated ? "Area estimated from photo. " : "Area edited by you. "}${node.sourceNote}` : "";
+  }
   $("#roomShape").value = node.shape || "circle";
   const rotation = normalizedRotation(node.rotation);
   node.rotation = rotation;
@@ -413,8 +480,9 @@ function hit(point) {
 }
 
 function setZoom(value, anchor = { x: w / 2, y: h / 2 }) {
+  keepDiagramFitted = false;
   const before = toWorld(anchor);
-  zoomLevel = clamp(value, .5, 2.5);
+  zoomLevel = clamp(value, HISTORICAL_VARIANT ? .5 : .2, HISTORICAL_VARIANT ? 2.5 : 4);
   cameraX = before.x - (anchor.x - w / 2) / zoomLevel;
   cameraY = before.y - (anchor.y - h / 2) / zoomLevel;
   $("#zoom").value = Math.round(zoomLevel * 100 / 10) * 10;
@@ -680,11 +748,17 @@ canvas.onpointerdown = event => {
   const node = hit(point);
   if (!node) {
     selected = null; renderList(); syncInspector();
+    keepDiagramFitted = false;
     const screen = screenPoint(event);
     pan = { startX: screen.x, startY: screen.y, cameraX, cameraY };
     canvas.classList.add("dragging");
     canvas.setPointerCapture(event.pointerId);
     status.textContent = "Panning view…";
+    return;
+  }
+  if (node.pinned) {
+    selectNode(node.id);
+    status.textContent = `${node.name} is fixed and cannot be dragged. Choose Release location to move it again.`;
     return;
   }
   drag = { node, ox: point.x - node.x, oy: point.y - node.y, sx: point.x, sy: point.y, moved: false };
@@ -695,6 +769,17 @@ canvas.onpointerdown = event => {
 
 canvas.onpointermove = event => {
   const point = eventPoint(event);
+  const tooltip = $("#spaceTooltip");
+  if (tooltip) {
+    const hovered = !drag && !pan && !activeTool ? hit(point) : null;
+    tooltip.hidden = !hovered;
+    if (hovered) {
+      const screen = screenPoint(event);
+      tooltip.textContent = `${hovered.name}\n${hovered.area.toLocaleString()} sf${hovered.areaEstimated ? " · estimated" : ""}${hovered.group ? "\n" + hovered.group : ""}${hovered.pinned ? "\nFixed · release in Properties to move" : ""}`;
+      tooltip.style.left = Math.max(8, Math.min(screen.x + 16, w - 250)) + "px";
+      tooltip.style.top = Math.max(8, Math.min(screen.y + 16, h - 115)) + "px";
+    }
+  }
   if (boundaryDraft) { boundaryDraft.x2 = point.x; boundaryDraft.y2 = point.y; return; }
   if (freehandDraft) { appendDraftPoint(freehandDraft, point); return; }
   if (arrowDraft) { arrowDraft.x2 = point.x; arrowDraft.y2 = point.y; return; }
@@ -712,6 +797,8 @@ canvas.onpointermove = event => {
   snapRectangleToBoundary(drag.node);
   if (Math.hypot(point.x - drag.sx, point.y - drag.sy) > 5 / zoomLevel) drag.moved = true;
 };
+
+canvas.onpointerleave = () => { const tooltip = $("#spaceTooltip"); if (tooltip) tooltip.hidden = true; };
 
 canvas.onpointerup = event => {
   if (boundaryDraft) {
@@ -1011,6 +1098,13 @@ function inwardSegmentNormal(boundary, segment) {
   return (center.x - midpoint.x) * first.x + (center.y - midpoint.y) * first.y >= 0 ? first : second;
 }
 
+function parallelRotationForSegment(currentRotation, segment) {
+  const tangent = Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x) * 180 / Math.PI;
+  const candidates = [];
+  for (let quarterTurn = -4; quarterTurn <= 4; quarterTurn++) candidates.push(normalizedRotation(tangent + quarterTurn * 90));
+  return candidates.sort((a, b) => Math.abs(normalizedRotation(a - currentRotation)) - Math.abs(normalizedRotation(b - currentRotation)))[0];
+}
+
 function snapRectangleToBoundary(node) {
   node.snappedBoundaryId = null;
   if (node.shape !== "rect" || !node.snapToBoundary) return false;
@@ -1026,10 +1120,14 @@ function snapRectangleToBoundary(node) {
     const support = baseSupportAt(node, outwardAngle);
     const gap = centerDistance - support - insideMargin;
     const score = Math.abs(gap);
-    if (!best || score < best.score) best = { point, inward, support, score };
+    if (!best || score < best.score) best = { point, inward, support, score, segment };
   }
   const threshold = Math.max(.1, Number(node.snapDistance) || 5) * AREA_SCALE;
   if (!best || best.score > threshold) return false;
+  node.rotation = parallelRotationForSegment(normalizedRotation(node.rotation), best.segment);
+  node.profile = null;
+  const outwardAngle = Math.atan2(-best.inward.y, -best.inward.x);
+  best.support = baseSupportAt(node, outwardAngle);
   node.x = best.point.x + best.inward.x * (best.support + insideMargin);
   node.y = best.point.y + best.inward.y * (best.support + insideMargin);
   node.vx = node.vy = 0;
@@ -1248,7 +1346,7 @@ function profileMean(radii) { return radii.reduce((sum, value) => sum + value * 
 
 function buildShapeProfiles() {
   for (const node of nodes) {
-    if (straightShape(node)) {
+    if (straightShape(node) || !foamAmount(node)) {
       node.profile = null;
       node.effectiveArea = node.area;
       continue;
@@ -1319,6 +1417,7 @@ function physics(dt) {
     if (!b.pinned && drag?.node !== b) { b.vx += fx * (b.mobility ?? 1); b.vy += fy * (b.mobility ?? 1); }
   }
   for (const node of nodes) {
+    if (node.pinned) { node.vx = node.vy = 0; continue; }
     if (!node.pinned && drag?.node !== node) {
       node.vx *= damp; node.vy *= damp;
       node.x += node.vx * dt * 60; node.y += node.vy * dt * 60;
@@ -1337,7 +1436,8 @@ function updateEffectiveAreas() {
     if (!node.areaEl) continue;
     const compressed = node.effectiveArea < node.area * .995;
     node.areaEl.textContent = compressed ? `${Math.round(node.effectiveArea).toLocaleString()} / ${node.area.toLocaleString()} sf` : node.area.toLocaleString() + " sf";
-    node.areaEl.title = compressed ? "Effective area / programmed area" : "Programmed area";
+    if (node.areaEstimated) node.areaEl.textContent += " est.";
+    node.areaEl.title = node.areaEstimated ? "Preliminary photo estimate — edit to verify" : compressed ? "Effective area / programmed area" : "Programmed area";
   }
   const programmed = nodes.reduce((sum, node) => sum + node.area, 0);
   const effective = nodes.reduce((sum, node) => sum + node.effectiveArea, 0);
@@ -1423,6 +1523,30 @@ function contrastColor(hex) {
   return r * .299 + g * .587 + b * .114 > 155 ? "#171717" : "#ffffff";
 }
 
+function photoBubbleLabel(node) {
+  // Compact centered labels keep the many small rooms from overlapping neighbors.
+  const width = node.r * 1.65;
+  let fontSize = Math.min(12, Math.max(5, node.r * .37));
+  ctx.font = `600 ${fontSize}px system-ui`;
+  const words = node.name.split(/\s+/), lines = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? line + " " + word : word;
+    if (line && ctx.measureText(next).width > width) { lines.push(line); line = word; }
+    else line = next;
+  }
+  if (line) lines.push(line);
+  const longest = Math.max(...lines.map(text => ctx.measureText(text).width));
+  if (longest > width) fontSize *= width / longest;
+  fontSize = Math.min(fontSize, node.r * 1.45 / (lines.length * 1.15 + 1.6));
+  const step = fontSize * 1.17;
+  const top = node.y - (lines.length * step + fontSize) / 2 + step / 2;
+  return {
+    lines: lines.map((text, index) => ({ text, y: top + index * step, fontSize, bold: true })),
+    area: { text: `${Math.round(node.effectiveArea).toLocaleString()} sf${node.areaEstimated ? "*" : ""}`, y: top + lines.length * step + 1, fontSize: fontSize * .85 }
+  };
+}
+
 function drawBubble(node) {
   const points = shapePoints(node);
   ctx.save();
@@ -1444,6 +1568,18 @@ function drawBubble(node) {
     ctx.save(); ctx.strokeStyle = "#1f8a57"; ctx.lineWidth = 7 / zoomLevel; ctx.setLineDash([4 / zoomLevel, 4 / zoomLevel]); traceNodeShape(node, points); ctx.stroke(); ctx.restore();
   }
 
+  if (node.sourceNote) {
+    const label = photoBubbleLabel(node);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = node.style.fill === "blueprint" ? "#fff" : "#17221d";
+    for (const part of [...label.lines, label.area]) {
+      ctx.font = `${part.bold ? "600 " : ""}${part.fontSize}px system-ui`;
+      ctx.fillText(part.text, node.x, part.y);
+    }
+    if (node.pinned && $("#showAnchor").checked) drawFixedAnchor(node);
+    ctx.restore();
+    return;
+  }
   const small = node.r < 32;
   const label = node.name.length > 18 ? node.name.slice(0, 17) + "…" : node.name;
   const shownArea = node.effectiveArea < node.area * .995 ? "≈" + Math.round(node.effectiveArea).toLocaleString() + " sf" : node.area.toLocaleString() + " sf";
@@ -1498,7 +1634,9 @@ function drawBoundary(boundary, draft = false) {
     ctx.fillStyle = color;
     ctx.font = `600 ${10 / zoomLevel}px system-ui`;
     ctx.textAlign = "center";
-    ctx.fillText(boundary.name.toUpperCase(), center.x, center.y);
+    if (boundary.labelAtTop && boundary.points) {
+      ctx.fillText(boundary.name.toUpperCase(), center.x, Math.min(...boundary.points.map(point => point.y)) - 10 / zoomLevel);
+    } else ctx.fillText(boundary.name.toUpperCase(), center.x, center.y);
   }
   ctx.restore();
 }
@@ -1592,6 +1730,11 @@ function draw() {
   drawConnections();
   nodes.forEach(drawBubble);
   annotations.forEach(annotation => drawAnnotation(annotation));
+  if (nodes.some(node => node.areaEstimated)) {
+    const bounds = diagramExportBounds();
+    ctx.fillStyle = "#59655f"; ctx.textAlign = "left"; ctx.font = "8px system-ui";
+    ctx.fillText("* Estimated photo areas. Outline and relationships are schematic.", bounds.x + 8, bounds.y + bounds.height - 4);
+  }
   drawDrafts();
   ctx.restore();
 }
@@ -1620,7 +1763,8 @@ function settingsSnapshot() {
 
 function projectSnapshot() {
   return {
-    schema: "testfit-bubbles", version: 6, exportedAt: new Date().toISOString(),
+    schema: "testfit-bubbles", version: 7, exportedAt: new Date().toISOString(),
+    projectInfo: projectInfo ? clone(projectInfo) : null,
     nodes: nodes.map(node => ({
       id: node.id, name: node.name, area: node.area, x: node.x, y: node.y,
       vx: 0, vy: 0, pinned: node.pinned, color: node.color, weight: node.weight,
@@ -1628,7 +1772,8 @@ function projectSnapshot() {
       shape: node.shape, customPoints: node.customPoints, boundaryId: node.boundaryId,
       rotation: node.rotation, rectWidth: node.rectWidth, rectHeight: node.rectHeight,
       snapToBoundary: node.snapToBoundary, snapDistance: node.snapDistance,
-      sketch: node.sketch, style: node.style
+      sketch: node.sketch, style: node.style,
+      presetKey: node.presetKey, group: node.group, areaEstimated: !!node.areaEstimated, sourceNote: node.sourceNote
     })),
     edges: clone(edges), boundaries: clone(boundaries), annotations: clone(annotations),
     settings: settingsSnapshot(), view: { zoom: zoomLevel, cameraX, cameraY }
@@ -1650,6 +1795,12 @@ function exportProject() {
 function loadProject(data) {
   if (!data || data.schema !== "testfit-bubbles" || !Array.isArray(data.nodes)) throw new Error("This is not a TestFit Bubbles project file.");
   const finiteOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  projectInfo = data.projectInfo && typeof data.projectInfo === "object" ? {
+    title: String(data.projectInfo.title || "").slice(0, 100),
+    source: String(data.projectInfo.source || "").slice(0, 200),
+    note: String(data.projectInfo.note || "").slice(0, 600),
+    preset: data.projectInfo.preset === "photo-surgical-center" ? "photo-surgical-center" : ""
+  } : null;
   const legacyFoam = data.settings?.organic !== false;
   const legacySqueeze = clamp(finiteOr(data.settings?.squeeze, 75) / 100, 0, 1);
   const legacySeparation = clamp(finiteOr(data.settings?.push, 70) / 100, 0, 1);
@@ -1672,7 +1823,9 @@ function loadProject(data) {
       boundaryId: saved.boundaryId == null ? null : Number(saved.boundaryId), style: { ...DEFAULT_STYLE, ...(saved.style || {}) },
       rotation: normalizedRotation(finiteOr(saved.rotation, 0)),
       rectWidth: Math.max(.1, finiteOr(saved.rectWidth, rectangle.width)), rectHeight: Math.max(.1, finiteOr(saved.rectHeight, rectangle.height)),
-      snapToBoundary: !!saved.snapToBoundary, snapDistance: clamp(finiteOr(saved.snapDistance, 5), .1, 100)
+      snapToBoundary: !!saved.snapToBoundary, snapDistance: clamp(finiteOr(saved.snapDistance, 5), .1, 100),
+      presetKey: String(saved.presetKey || "").slice(0, 40), group: String(saved.group || "").slice(0, 80),
+      areaEstimated: !!saved.areaEstimated, sourceNote: String(saved.sourceNote || "").slice(0, 500)
     };
   });
   const ids = new Set(nodes.map(node => node.id));
@@ -1704,7 +1857,7 @@ function loadProject(data) {
 function sanitizeBoundary(saved, index) {
   const common = {
     id: Number(saved.id) || index + 1, name: String(saved.name || `Boundary ${index + 1}`).slice(0, 40),
-    kind: saved.kind === "void" ? "void" : "outer", color: /^#[0-9a-f]{6}$/i.test(saved.color) ? saved.color : "#1b2721", visible: saved.visible !== false
+    kind: saved.kind === "void" ? "void" : "outer", color: /^#[0-9a-f]{6}$/i.test(saved.color) ? saved.color : "#1b2721", visible: saved.visible !== false, labelAtTop: !!saved.labelAtTop
   };
   if (saved.type === "rect") return { ...common, type: "rect", x: Number(saved.x) || 0, y: Number(saved.y) || 0, width: Math.max(1, Number(saved.width) || 1), height: Math.max(1, Number(saved.height) || 1) };
   if (saved.type === "polygon" && Array.isArray(saved.points) && saved.points.length >= 3) return { ...common, type: "polygon", points: saved.points.map(point => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 })) };
@@ -1853,10 +2006,13 @@ function buildSvg() {
     const outlinePath = pathData(outlinePoints, node.style.outline !== "open");
     const labelColor = node.style.fill === "outline" || node.style.fill === "tint" ? "#171717" : node.style.fill === "blueprint" ? "#ffffff" : contrastColor(node.color);
     const anchor = node.pinned && $("#showAnchor").checked ? `<g stroke="#171717" stroke-width="2" fill="#fff"><circle cx="${node.x}" cy="${node.y}" r="9"/><path d="M${node.x - 13} ${node.y}H${node.x + 13}M${node.x} ${node.y - 13}V${node.y + 13}"/></g><text x="${node.x + 14}" y="${node.y - 12}" font-family="monospace" font-size="10">fixed ${Math.round(node.x)}, ${Math.round(node.y)}</text>` : "";
-    return `<g>${misregister}<path d="${closed}" fill="${fill}"/>${pattern}<path d="${outlinePath}" fill="none" stroke="${outline}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"${svgDash(node.style.outline)}/><text x="${node.x}" y="${node.y - 5}" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="600" fill="${labelColor}">${svgEscape(node.name)}</text><text x="${node.x}" y="${node.y + 14}" text-anchor="middle" font-family="system-ui" font-size="12" fill="${labelColor}">${Math.round(node.effectiveArea).toLocaleString()} sf</text>${anchor}</g>`;
+    const layout = node.sourceNote ? photoBubbleLabel(node) : null;
+    const labels = layout ? [...layout.lines, layout.area].map(part => `<text x="${node.x}" y="${part.y}" text-anchor="middle" dominant-baseline="middle" font-family="system-ui" font-size="${part.fontSize}" font-weight="${part.bold ? 600 : 400}" fill="${labelColor}">${svgEscape(part.text)}</text>`).join("") : `<text x="${node.x}" y="${node.y - 5}" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="600" fill="${labelColor}">${svgEscape(node.name)}</text><text x="${node.x}" y="${node.y + 14}" text-anchor="middle" font-family="system-ui" font-size="12" fill="${labelColor}">${Math.round(node.effectiveArea).toLocaleString()} sf</text>`;
+    return `<g><title>${svgEscape(node.name)}${node.areaEstimated ? " — estimated photo area" : ""}</title>${misregister}<path d="${closed}" fill="${fill}"/>${pattern}<path d="${outlinePath}" fill="none" stroke="${outline}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"${svgDash(node.style.outline)}/>${labels}${anchor}</g>`;
   }).join("");
   const annotationSvg = annotations.map(annotation => svgArrowMarkup(annotation.x1, annotation.y1, annotation.x2, annotation.y2, annotation.color, annotation.width, annotation.lineStyle, annotation.headStyle, annotation.doubleHead)).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${exportInfo.widthInches.toFixed(4)}in" height="${exportInfo.heightInches.toFixed(4)}in" viewBox="${bounds.x.toFixed(2)} ${bounds.y.toFixed(2)} ${bounds.width.toFixed(2)} ${bounds.height.toFixed(2)}" preserveAspectRatio="xMinYMin meet"><title>TestFit Bubbles — ${svgEscape(exportInfo.label)}</title><desc>Architectural bubble diagram exported at ${svgEscape(exportInfo.label)}. Print or place at 100% actual size.</desc><metadata data-units="feet" data-world-units-per-foot="${AREA_SCALE}" data-inches-per-foot="${exportInfo.inchesPerFoot}" data-scale="${svgEscape(exportInfo.label)}"/>${marker}<rect x="${bounds.x.toFixed(2)}" y="${bounds.y.toFixed(2)}" width="${bounds.width.toFixed(2)}" height="${bounds.height.toFixed(2)}" fill="#f7f9f6"/>${boundarySvg}${connectionSvg}${nodeSvg}${annotationSvg}</svg>`;
+  const estimateNote = nodes.some(node => node.areaEstimated) ? `<text x="${bounds.x + 8}" y="${bounds.y + bounds.height - 4}" font-family="system-ui" font-size="8" fill="#59655f">* Estimated photo areas. Outline and relationships are schematic.</text>` : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${exportInfo.widthInches.toFixed(4)}in" height="${exportInfo.heightInches.toFixed(4)}in" viewBox="${bounds.x.toFixed(2)} ${bounds.y.toFixed(2)} ${bounds.width.toFixed(2)} ${bounds.height.toFixed(2)}" preserveAspectRatio="xMinYMin meet"><title>TestFit Bubbles — ${svgEscape(exportInfo.label)}</title><desc>Architectural bubble diagram exported at ${svgEscape(exportInfo.label)}. Print or place at 100% actual size.</desc><metadata data-units="feet" data-world-units-per-foot="${AREA_SCALE}" data-inches-per-foot="${exportInfo.inchesPerFoot}" data-scale="${svgEscape(exportInfo.label)}"/>${marker}<rect x="${bounds.x.toFixed(2)}" y="${bounds.y.toFixed(2)}" width="${bounds.width.toFixed(2)}" height="${bounds.height.toFixed(2)}" fill="#f7f9f6"/>${boundarySvg}${connectionSvg}${nodeSvg}${annotationSvg}${estimateNote}</svg>`;
 }
 
 function pdfNumber(value) { return Number(Number(value).toFixed(8)).toString(); }
@@ -1989,14 +2145,20 @@ function buildPdfContent(info) {
     const outlinePoints = node.style.outline === "open" ? openOutlinePoints(node, points) : points;
     output.push(`q ${pdfColor(outline)} RG ${pdfNumber(3 * info.pointScale)} w 1 J 1 j ${pdfDash(node.style.outline, info)}\n${pdfPath(outlinePoints, info, node.style.outline !== "open")} S Q`);
     const labelColor = node.style.fill === "outline" || node.style.fill === "tint" ? "#171717" : node.style.fill === "blueprint" ? "#ffffff" : contrastColor(node.color);
-    output.push(pdfText(node.name, node.x, node.y - 5, 14, labelColor, info, true));
-    output.push(pdfText(`${Math.round(node.effectiveArea).toLocaleString()} sf`, node.x, node.y + 14, 12, labelColor, info));
+    if (node.sourceNote) {
+      const layout = photoBubbleLabel(node);
+      for (const part of [...layout.lines, layout.area]) output.push(pdfText(part.text, node.x, part.y + part.fontSize * .3, part.fontSize, labelColor, info, !!part.bold));
+    } else {
+      output.push(pdfText(node.name, node.x, node.y - 5, 14, labelColor, info, true));
+      output.push(pdfText(`${Math.round(node.effectiveArea).toLocaleString()} sf`, node.x, node.y + 14, 12, labelColor, info));
+    }
     if (node.pinned && $("#showAnchor").checked) {
       const point = pdfPoint(node, info), radius = 9 * info.pointScale;
       output.push(`q 1 1 1 rg ${pdfColor("#171717")} RG ${pdfNumber(2 * info.pointScale)} w\n${pdfCircle(point.x, point.y, radius)} B\n${pdfNumber(point.x - 13 * info.pointScale)} ${pdfNumber(point.y)} m ${pdfNumber(point.x + 13 * info.pointScale)} ${pdfNumber(point.y)} l S\n${pdfNumber(point.x)} ${pdfNumber(point.y - 13 * info.pointScale)} m ${pdfNumber(point.x)} ${pdfNumber(point.y + 13 * info.pointScale)} l S Q`);
     }
   });
   annotations.forEach(annotation => output.push(pdfArrowMarkup(annotation.x1, annotation.y1, annotation.x2, annotation.y2, annotation.color, annotation.width, annotation.lineStyle, annotation.headStyle, annotation.doubleHead, info)));
+  if (nodes.some(node => node.areaEstimated)) output.push(pdfText("* Estimated photo areas. Outline and relationships are schematic.", info.bounds.x + info.bounds.width / 2, info.bounds.y + info.bounds.height - 4, 8, "#59655f", info));
 
   const barX = 36, barY = 15, barLength = info.calibrationFeet * info.inchesPerFoot * 72;
   output.push(`q 1 1 1 rg 0 0 ${pdfNumber(info.pageWidthPoints)} ${pdfNumber(info.footerPoints)} re f ${pdfColor("#171717")} RG 1 w\n${pdfNumber(barX)} ${pdfNumber(barY)} m ${pdfNumber(barX + barLength)} ${pdfNumber(barY)} l S\n${pdfNumber(barX)} ${pdfNumber(barY - 4)} m ${pdfNumber(barX)} ${pdfNumber(barY + 4)} l S\n${pdfNumber(barX + barLength)} ${pdfNumber(barY - 4)} m ${pdfNumber(barX + barLength)} ${pdfNumber(barY + 4)} l S\nBT /F2 8 Tf ${pdfColor("#171717")} rg 1 0 0 1 ${pdfNumber(barX)} 4 Tm (${pdfSafeText(`${info.calibrationFeet}'-0\" CALIBRATION`)}) Tj ET\nBT /F1 8 Tf 1 0 0 1 ${pdfNumber(barX + barLength + 12)} 12 Tm (${pdfSafeText(`${info.label} | Bluebeam measurement viewport embedded`)}) Tj ET Q`);
@@ -2083,6 +2245,20 @@ $("#zoom").oninput = event => setZoom(+event.target.value / 100);
 $("#zoomIn").onclick = () => setZoom(zoomLevel + .1);
 $("#zoomOut").onclick = () => setZoom(zoomLevel - .1);
 $("#zoomReset").onclick = () => { cameraX = w / 2; cameraY = h / 2; setZoom(1); };
+if ($("#fitDiagram")) $("#fitDiagram").onclick = fitDiagram;
+if ($("#releaseLayout")) $("#releaseLayout").onclick = () => {
+  nodes.forEach(node => { node.pinned = false; node.vx = node.vy = 0; });
+  renderAllControls();
+  status.textContent = "All spaces released. Drag to explore; existing adjacency pulls start at 0% to preserve the photo arrangement.";
+};
+if ($("#blankProject")) $("#blankProject").onclick = () => {
+  nodes = []; edges = []; boundaries = []; annotations = [];
+  projectInfo = selected = linkStart = drag = pan = null;
+  nextNodeId = nextBoundaryId = nextAnnotationId = 1;
+  clearTool(true); setZoom(1); cameraX = w / 2; cameraY = h / 2;
+  renderAllControls();
+  status.textContent = "Blank project. Add spaces, or choose Restore photo layout.";
+};
 $("#lineWeight").oninput = event => { $("#lineWeightValue").textContent = event.target.value + " px"; };
 $("#annotationWeight").oninput = event => { $("#annotationWeightValue").textContent = event.target.value + " px"; };
 
@@ -2225,7 +2401,8 @@ $("#rectSnap").onchange = event => {
   const node = selectedNode(); if (!node) return;
   node.snapToBoundary = event.target.checked;
   if (node.snapToBoundary) snapRectangleToBoundary(node);
-  status.textContent = `${node.name} boundary snapping ${node.snapToBoundary ? "enabled" : "disabled"}.`;
+  syncInspector();
+  status.textContent = `${node.name} boundary snapping ${node.snapToBoundary ? "and parallel edge alignment enabled" : "disabled"}.`;
 };
 function updateRectangleSnapDistance(value) {
   const node = selectedNode(), distance = Number(value);
@@ -2248,6 +2425,7 @@ $("#selectedAreaSize").onchange = event => {
   if (!node || !Number.isFinite(area) || area < 1) { if (node) event.target.value = node.area; return; }
   const ratio = ensureRectangleDimensions(node).width / ensureRectangleDimensions(node).height;
   node.area = area; node.r = radius(area); node.effectiveArea = area; node.profile = null;
+  node.areaEstimated = false;
   if (node.shape === "rect") {
     const dimensions = rectangleDimensionsForArea(area, ratio);
     node.rectWidth = dimensions.width; node.rectHeight = dimensions.height;
